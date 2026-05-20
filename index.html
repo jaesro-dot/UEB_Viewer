@@ -170,11 +170,15 @@ header{background:var(--c1);border-bottom:1px solid var(--border);display:flex;a
       <div class="drop-title">LPS Visor · UEB003-CED</div>
       <div class="drop-sub">Arrastra un IFC aquí o usa el botón<br>Compatible con IFC2X3 exportado desde Revit</div>
       <label class="drop-btn" for="fi">Seleccionar archivo IFC</label>
+      <button class="drop-btn" style="background:rgba(245,158,11,.1);border-color:var(--pend);color:var(--pend);font-size:11px" onclick="runDiagnostic()">🔍 Diagnóstico de conexión</button>
 
-      <!-- IFCs precargados desde GitHub — edita estas URLs -->
-      <div id="ifc-preloaded" style="display:none">
-        <div class="ifc-links-label">Modelos del proyecto</div>
+      <!-- IFCs precargados desde GitHub -->
+      <div id="ifc-preloaded" style="display:none;flex-direction:column;gap:6px;width:100%;max-width:320px;">
+        <div class="ifc-links-label">Modelos del proyecto (desde GitHub)</div>
         <div class="ifc-links" id="ifc-links-container"></div>
+        <div id="config-warn" style="font-family:var(--mono);font-size:9px;color:var(--pend);text-align:center;display:none">
+          ⚠ Edita GITHUB_USER y GITHUB_REPO en el HTML
+        </div>
       </div>
     </div>
 
@@ -269,16 +273,32 @@ header{background:var(--c1);border-bottom:1px solid var(--border);display:flex;a
 
 <script>
 /* ══════════════════════════════════════════
-   CONFIGURACIÓN — edita estas URLs para
-   cargar IFCs directamente desde tu GitHub
-   Formato: raw.githubusercontent.com/USUARIO/REPO/main/archivo.ifc
+   ★ CONFIGURACIÓN — EDITA AQUÍ ★
+   
+   1. Reemplaza GITHUB_USER con tu usuario GitHub
+   2. Reemplaza GITHUB_REPO con el nombre de tu repositorio
+   3. Añade/quita archivos IFC según necesites
+   
+   Los archivos IFC deben estar en la raíz del repo.
+   raw.githubusercontent.com los sirve con CORS correcto.
 ══════════════════════════════════════════ */
-const IFC_PRELOADED = [
-  // Descomenta y edita con tus URLs reales:
-  // { label: 'EST — Estructural',  url: 'https://raw.githubusercontent.com/jaesro-dot/UEB_Viewer/main/UEB003-CED-GEN-000-MOD-EST-0001.ifc' },
-  // { label: 'SAN — Sanitarias',   url: 'https://raw.githubusercontent.com/jaesro-dot/UEB_Viewer/main/UEB003-CED-GEN-000-MOD-SAN-0001.ifc' },
-  // { label: 'ARQ — Arquitectura', url: 'https://raw.githubusercontent.com/jaesro-dot/UEB_Viewer/main/UEB003-CED-GEN-000-MOD-ARQ-0001.ifc' },
+
+// ← EDITA ESTAS DOS LÍNEAS:
+const GITHUB_USER = 'jaesro-dot';   // ← tu usuario de GitHub
+const GITHUB_REPO = 'UEB_VIEWER';    // ← nombre de tu repositorio
+
+// ← EDITA ESTA LISTA con los nombres exactos de tus archivos IFC:
+const IFC_FILES = [
+  { label: 'EST — Estructural',  file: 'UEB003-CED-GEN-000-MOD-EST-0001_03.ifc' },
+  // { label: 'SAN — Sanitarias',   file: 'UEB003-CED-GEN-000-MOD-SAN-0001.ifc' },
+  // { label: 'ARQ — Arquitectura', file: 'UEB003-CED-GEN-000-MOD-ARQ-0001.ifc' },
 ];
+
+// No tocar esto — construye las URLs automáticamente
+const IFC_PRELOADED = IFC_FILES.map(({label, file}) => ({
+  label,
+  url: `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/${file}`
+}));
 
 /* ══════════════════════════════════════════
    THREE.JS
@@ -677,16 +697,29 @@ async function loadFromUrl(url,label){
   setLd(`Descargando ${label}...`);
   document.getElementById('dropzone').classList.add('hidden');
   try{
-    const res=await fetch(url);
-    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    // raw.githubusercontent.com soporta CORS; usar cache:no-cache para evitar versiones antiguas
+    const res=await fetch(url, {cache:'no-cache'});
+    if(!res.ok){
+      if(res.status===404) throw new Error(`Archivo no encontrado (404).\nVerifica que el archivo esté en el repositorio con ese nombre exacto.`);
+      if(res.status===403) throw new Error(`Acceso denegado (403).\nVerifica que el repositorio sea público.`);
+      throw new Error(`Error HTTP ${res.status}`);
+    }
+    const contentLength=res.headers.get('content-length');
+    if(contentLength) setLd(`Descargando ${label}... ${Math.round(contentLength/1024/1024*10)/10} MB`);
     const text=await res.text();
-    setLd('Parseando...');await tick();
+    if(!text.includes('ISO-10303-21'))throw new Error('El archivo no parece ser un IFC válido.\nVerifica que el archivo se subió correctamente a GitHub.');
+    setLd(`Parseando ${label}...`);await tick();
     const filename=url.split('/').pop();
     const els=parseIFC(text,filename);
+    if(!els.length)throw new Error('No se encontraron elementos constructivos.\nExporta el IFC en modo IFC2X3 desde Revit.');
     buildScene(els);
-    document.getElementById('modelo-tag').textContent=S.elements.length+' elem';
+    document.getElementById('modelo-tag').textContent=S.elements.length+' elem · '+[...new Set(S.elements.map(e=>e.archivo))].join(', ');
     updateUI();
-  }catch(err){console.error(err);alert('Error cargando '+label+':\n'+err.message);if(!S.elements.length)document.getElementById('dropzone').classList.remove('hidden');}
+  }catch(err){
+    console.error(err);
+    alert(`Error cargando "${label}":\n\n${err.message}`);
+    if(!S.elements.length)document.getElementById('dropzone').classList.remove('hidden');
+  }
   hideLd();
 }
 
@@ -967,15 +1000,64 @@ dz.addEventListener('drop',async e=>{e.preventDefault();dz.classList.remove('dra
 /* ══════════════════════════════════════════
    IFCs PRECARGADOS DESDE GITHUB
 ══════════════════════════════════════════ */
+/* ══ DIAGNÓSTICO ══ */
+async function runDiagnostic(){
+  if(GITHUB_USER==='TU-USUARIO'){
+    alert('⚠️ No has configurado el visor.\n\nEdita el archivo HTML y cambia:\n  GITHUB_USER = "TU-USUARIO"\npor tu usuario real de GitHub.');
+    return;
+  }
+  const msgs=[];
+  msgs.push(`Usuario: ${GITHUB_USER}`);
+  msgs.push(`Repo: ${GITHUB_REPO}`);
+  msgs.push(`Archivos configurados: ${IFC_FILES.length}`);
+  msgs.push('');
+  
+  for(const {label,file} of IFC_FILES){
+    const url=`https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/${file}`;
+    msgs.push(`Probando: ${label}`);
+    msgs.push(`URL: ${url}`);
+    try{
+      const res=await fetch(url,{method:'HEAD',cache:'no-cache'});
+      if(res.ok){
+        const size=res.headers.get('content-length');
+        msgs.push(`✅ OK — ${size?Math.round(size/1024)+' KB':'tamaño desconocido'}`);
+      } else if(res.status===404){
+        msgs.push(`❌ 404 — Archivo no encontrado`);
+        msgs.push(`   Verifica el nombre exacto en GitHub`);
+      } else if(res.status===403){
+        msgs.push(`❌ 403 — Repositorio privado`);
+        msgs.push(`   Ve a Settings → Change visibility → Public`);
+      } else {
+        msgs.push(`❌ Error ${res.status}`);
+      }
+    }catch(e){
+      msgs.push(`❌ Error de red: ${e.message}`);
+      msgs.push(`   ¿Estás online?`);
+    }
+    msgs.push('');
+  }
+  alert(msgs.join('\n'));
+}
+
 (function initPreloaded(){
   if(!IFC_PRELOADED.length)return;
   document.getElementById('ifc-preloaded').style.display='flex';
   const container=document.getElementById('ifc-links-container');
+  const isConfigured = GITHUB_USER !== 'TU-USUARIO';
+  if(!isConfigured){
+    document.getElementById('config-warn').style.display='block';
+  }
   IFC_PRELOADED.forEach(({label,url})=>{
     const btn=document.createElement('button');
     btn.className='ifc-link-btn';
     btn.textContent='📐 '+label;
-    btn.onclick=()=>loadFromUrl(url,label);
+    if(!isConfigured){
+      btn.style.opacity='.5';
+      btn.title='Edita GITHUB_USER en el HTML primero';
+      btn.onclick=()=>alert('Edita las líneas GITHUB_USER y GITHUB_REPO en el archivo HTML primero.\n\nCambia TU-USUARIO por tu usuario real de GitHub.');
+    } else {
+      btn.onclick=()=>loadFromUrl(url,label);
+    }
     container.appendChild(btn);
   });
 })();
