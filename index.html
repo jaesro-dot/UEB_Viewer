@@ -187,7 +187,7 @@ import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
   { label:'EST — Estructural',      url:'https://app.speckle.systems/projects/c9c081c5b1/models/c89a3e7e5c', sist:'EST' },
-  { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/ab599871dd', sist:'ARQ' },
+  { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/6ba967132f', sist:'ARQ' },
   { label:'SAN — Sanitarias',       url:'https://app.speckle.systems/projects/c9c081c5b1/models/6db9f15e0e', sist:'SAN' },
   { label:'IE  — Inst. Eléctricas', url:'https://app.speckle.systems/projects/c9c081c5b1/models/aa98c3b773', sist:'IE'  },
   { label:'ICT — Comunicaciones',   url:'https://app.speckle.systems/projects/c9c081c5b1/models/3bbdd652d0', sist:'ICT' },
@@ -339,22 +339,23 @@ async function extractElements(sist) {
     if (!st || st.includes('chunk') || st.includes('datastore') ||
         st.includes('view') || st === 'objects.base') return true;
 
-    // Solo nodos con geometría real y tipo Revit reconocible
+    // Geometría real O elemento con id de aplicación (instancia Revit)
     const hasGeo = raw['@displayValue'] || raw.displayValue ||
                    raw['@displayMesh']  || raw.displayMesh;
-    if (!hasGeo) return true;
+    const hasAppId = raw.applicationId && raw.applicationId.length > 5;
+    if (!hasGeo && !hasAppId) return true;
 
-    // Excluir tipos de categoría, familia y tipo (no son instancias)
+    // Excluir tipos que no son instancias
     if (st.includes('revittype') || st.includes('familytype') ||
         st.includes('category')  || st.includes('elementtype') ||
-        nombre.toLowerCase().includes(':') === false && 
-        (st === 'objects.other.revit.parameter' || st === 'objects.other.revit.collection'))
-      return true;
+        st === 'objects.other.revit.parameter' ||
+        st === 'objects.other.revit.collection') return true;
 
     const id = raw.applicationId || raw.id || '';
     if (!id || seen.has(id)) return true;
     seen.add(id);
 
+    // nombre declarado DESPUÉS del guard de id
     const nombre = raw.type || raw.name || raw.family ||
                    raw.speckle_type?.split('.').pop() || 'Elemento';
 
@@ -381,13 +382,18 @@ async function extractElements(sist) {
       return '';
     }
 
-    const nivel   = gp(['NIVEL','nivel','Level','level']) || raw.level?.name || raw.Level?.name || '—';
-    const sistEl  = gp(['SISTEMA','DISCIPLINA','sistema','disciplina']) || sist;
-    const lpsIFC  = gp(['LPS','lps']);
-    const codigo  = gp(['CODIGO','Codigo','CODE','code','Código']);
-    const partida = gp(['PARTIDA','Partida','partida']);
+    const nivel    = gp(['NIVEL','nivel','Level','level']) || raw.level?.name || raw.Level?.name || '—';
+    const sistEl   = gp(['SISTEMA','DISCIPLINA','sistema','disciplina']) || sist;
+    const lpsIFC   = gp(['LPS','lps']);
+    const ejecutado= gp(['EJECUTADO','ejecutado','Ejecutado']);
+    const codigo   = gp(['CODIGO','Codigo','CODE','code','Código']);
+    const partida  = gp(['PARTIDA','Partida','partida']);
 
-    S.elements.push({ id, nombre, nivel, sist:sistEl, lpsIFC, codigo, partida });
+    // Considerar ejecutado si EJECUTADO=Sí/.T./true o si tiene LPS
+    const tieneColor = lpsIFC || ejecutado === 'Sí' || ejecutado === '.T.' ||
+                       ejecutado?.toLowerCase() === 'true';
+
+    S.elements.push({ id, nombre, nivel, sist:sistEl, lpsIFC, ejecutado, tieneColor, codigo, partida });
     return true;
   });
 
@@ -400,8 +406,8 @@ async function applyColors() {
   if (!S.filter) return;
   try {
     await S.filter.resetFilters();
-    const withLPS    = S.elements.filter(e => S.lps[e.id] || e.lpsIFC).map(e => e.id);
-    const withoutLPS = S.elements.filter(e => !S.lps[e.id] && !e.lpsIFC).map(e => e.id);
+    const withLPS    = S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id);
+    const withoutLPS = S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id);
     const colorGroups = [];
     if (withLPS.length)    colorGroups.push({ objectIds: withLPS,    color: '#10b981' });
     if (withoutLPS.length) colorGroups.push({ objectIds: withoutLPS, color: '#374151' });
@@ -474,7 +480,7 @@ function updateFilters() {
 function updateUI() { updateFilters(); renderElems(); renderRegs(); renderSum(); updCounts(); }
 
 function updCounts() {
-  const c = S.elements.filter(e => S.lps[e.id] || e.lpsIFC).length;
+  const c = S.elements.filter(e => S.lps[e.id] || e.tieneColor).length;
   document.getElementById('cc').textContent = c;
   document.getElementById('cs').textContent = S.elements.length - c;
 }
@@ -484,7 +490,7 @@ function renderElems() {
   list.innerHTML = '';
   getFiltered().forEach(el => {
     const lps = S.lps[el.id] || el.lpsIFC || '';
-    const has = !!lps;
+    const has = !!(S.lps[el.id] || el.tieneColor);
     const d = document.createElement('div');
     d.className = 'ei' + (el.id === S.selId ? ' sl' : '');
     d.dataset.id = el.id;
@@ -515,9 +521,9 @@ function renderRegs() {
 
 function renderSum() {
   document.getElementById('stt').textContent = S.elements.length;
-  document.getElementById('stc').textContent = S.elements.filter(e => S.lps[e.id] || e.lpsIFC).length;
+  document.getElementById('stc').textContent = S.elements.filter(e => S.lps[e.id] || e.tieneColor).length;
   function mkB(cid, kfn) {
-    const g = {}; S.elements.forEach(e => { const k = kfn(e); if(!g[k])g[k]={t:0,c:0}; g[k].t++; if(S.lps[e.id]||e.lpsIFC)g[k].c++; });
+    const g = {}; S.elements.forEach(e => { const k = kfn(e); if(!g[k])g[k]={t:0,c:0}; g[k].t++; if(S.lps[e.id]||e.tieneColor)g[k].c++; });
     document.getElementById(cid).innerHTML = Object.entries(g).sort()
       .map(([k,v])=>`<div class="br"><span class="bl">${k}</span><span class="bv"><span style="color:var(--ej)">${v.c}</span><span style="color:var(--mu)">${v.t}</span></span></div>`).join('');
   }
