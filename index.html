@@ -135,9 +135,9 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
         <div><div class="flbl">Sistema</div><select class="fsel" id="fs" onchange="applyFilters()"><option value="">Todos</option></select></div>
       </div>
       <div class="leg">
-        <div class="lr"><div class="ld" style="background:var(--ej)"></div><span>Guardado</span><span class="lc" id="cc">0</span></div>
-        <div class="lr"><div class="ld" style="background:var(--pe)"></div><span>Del IFC (sin editar)</span><span class="lc" id="ci">0</span></div>
-        <div class="lr"><div class="ld" style="background:var(--c4)"></div><span>Sin LPS</span><span class="lc" id="cs">0</span></div>
+        <div class="lr"><div class="ld" style="background:var(--ej)"></div><span>SEM actual (guardado)</span><span class="lc" id="cc">0</span></div>
+        <div class="lr"><div class="ld" style="background:var(--pe)"></div><span>SEM anterior (del IFC)</span><span class="lc" id="ci">0</span></div>
+        <div class="lr"><div class="ld" style="background:var(--c4)"></div><span>Sin SEM</span><span class="lc" id="cs">0</span></div>
       </div>
       <div id="ep" style="display:none">
         <div><div class="ep-l">Elemento</div><div class="ep-n" id="epn">—</div></div>
@@ -370,8 +370,11 @@ async function extractElements(sist) {
     seen.add(id);
 
     // nombre declarado DESPUÉS del guard de id
-    const nombre = raw.type || raw.name || raw.family ||
-                   raw.speckle_type?.split('.').pop() || 'Elemento';
+    // type="none" en Speckle significa que hay que leer otros campos
+    const nombre = (raw.type && raw.type !== 'none' ? raw.type : null) ||
+                   raw.name || raw.family || raw.elementId ||
+                   (raw.speckle_type && raw.speckle_type !== 'none' ? raw.speckle_type.split('.').pop() : null) ||
+                   'Elemento';
 
     // Leer parámetros — Revit los exporta como {name, value, units}
     const params = raw.parameters || raw.Parameters || {};
@@ -403,9 +406,8 @@ async function extractElements(sist) {
     const codigo   = gp(['CODIGO','Codigo','CODE','code','Código']);
     const partida  = gp(['PARTIDA','Partida','partida']);
 
-    // Considerar ejecutado si EJECUTADO=Sí/.T./true o si tiene LPS
-    const tieneColor = lpsIFC || ejecutado === 'Sí' || ejecutado === '.T.' ||
-                       ejecutado?.toLowerCase() === 'true';
+    // Tiene color previo si LPS del IFC contiene "SEM" (ejecutado en semana anterior)
+    const tieneColor = (lpsIFC && lpsIFC.toUpperCase().includes('SEM'));
 
     const nodeId = node?.model?.id || id;
     S.elements.push({ id, nodeId, nombre, nivel, sist:sistEl, lpsIFC, ejecutado, tieneColor, codigo, partida });
@@ -419,37 +421,46 @@ async function extractElements(sist) {
 /* COLOREADO */
 async function applyColors() {
   const st = document.getElementById('color-status');
-  
-  // Todos los IDs guardados en S.lps (incluye applicationId y nodeId)
-  const lpsAllIds = Object.keys(S.lps);
-  
-  // Para los sin LPS, recoger ids de elementos del árbol que NO estén en lpsAllIds
-  const noLpsIds = [];
+
+  // S.lps contiene nodeIds reales (guardados desde el HIT)
+  const lpsNodeIds  = Object.keys(S.lps);
+
+  // Del IFC: elementos con lpsIFC que contiene SEM (semana anterior)
+  // Sus nodeIds están en S.nodeIdMap (appId -> nodeId)
+  const ifcNodeIds  = [];
+  const noLpsNodeIds = [];
+
   try {
     S.viewer.getWorldTree().walk(node => {
       const raw = node?.model?.raw;
       if (!raw) return true;
       const nId = node?.model?.id || '';
-      const aId = raw?.applicationId || raw?.id || '';
-      if (!lpsAllIds.includes(nId) && !lpsAllIds.includes(aId)) {
-        if (nId) noLpsIds.push(nId);
-      }
+      if (!nId) return true;
+      if (lpsNodeIds.includes(nId)) return true; // ya tiene LPS guardado
+      const appId = raw?.applicationId || raw?.id || '';
+      // Buscar en S.elements si tiene lpsIFC con SEM
+      const el = S.elements.find(e => e.id === appId || e.nodeId === nId);
+      if (el?.tieneColor) ifcNodeIds.push(nId);
+      else noLpsNodeIds.push(nId);
       return true;
     });
   } catch(e) {}
 
-  console.log('applyColors: lpsIds:', lpsAllIds.length, 'noLps:', noLpsIds.length);
-  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; st.textContent=`${lpsAllIds.length} con LPS`; }
+  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; 
+            st.textContent=`${lpsNodeIds.length} actual, ${ifcNodeIds.length} prev`; }
 
   try {
     const f = S.filter;
     await f.resetFilters?.();
     const groups = [];
-    if (lpsAllIds.length) groups.push({ objectIds: lpsAllIds, color: '#10b981' });
-    if (noLpsIds.length)  groups.push({ objectIds: noLpsIds,  color: '#4b5563' });
+    // Verde brillante: LPS ingresado en esta sesión (semana actual)
+    if (lpsNodeIds.length)  groups.push({ objectIds: lpsNodeIds,  color: '#10b981' });
+    // Amarillo: tenía SEM en el IFC (semana anterior)
+    if (ifcNodeIds.length)  groups.push({ objectIds: ifcNodeIds,  color: '#f59e0b' });
+    // Gris: sin LPS
+    if (noLpsNodeIds.length) groups.push({ objectIds: noLpsNodeIds, color: '#374151' });
     await f.setUserObjectColors(groups);
     if (st) { st.textContent='✓ Coloreado'; st.style.color='var(--ej)'; }
-    console.log('setUserObjectColors OK con ids:', lpsAllIds.slice(0,3));
   } catch(e) {
     console.error('applyColors:', e);
     if (st) { st.textContent='Error: '+e.message; st.style.color='var(--pe)'; }
