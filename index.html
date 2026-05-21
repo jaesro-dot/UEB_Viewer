@@ -119,7 +119,15 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
     <div id="model-selector" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,16,.94);z-index:49">
       <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">LPS Visor · UEB003-CED</div>
       <div style="font-family:var(--mono);font-size:11px;color:var(--mu)">Selecciona el modelo a visualizar</div>
-      <div class="mbx" id="mbox"></div>
+      <div class="mbx" id="mbox">
+        <button class="mbt" onclick="loadModel(MODELS[0])"><span class="mi">📐</span><span><span class="ml">EST — Estructural</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" onclick="loadModel(MODELS[1])"><span class="mi">📐</span><span><span class="ml">ARQ — Arquitectura</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" onclick="loadModel(MODELS[2])"><span class="mi">📐</span><span><span class="ml">SAN — Sanitarias</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" onclick="loadModel(MODELS[3])"><span class="mi">📐</span><span><span class="ml">IE — Inst. Eléctricas</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" onclick="loadModel(MODELS[4])"><span class="mi">📐</span><span><span class="ml">ICT — Comunicaciones</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" onclick="loadModel(MODELS[5])"><span class="mi">📐</span><span><span class="ml">MEC — Mecánicas</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" onclick="loadModel(MODELS[6])"><span class="mi">📐</span><span><span class="ml">ACI — Aire / Clima</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+      </div>
       <div class="ors">o pega una URL de Speckle</div>
       <div style="display:flex;gap:6px;width:100%;max-width:310px">
         <input id="curl" type="text" placeholder="https://app.speckle.systems/projects/..."
@@ -703,11 +711,13 @@ document.getElementById('cbtn').addEventListener('click', async () => {
 });
 
 /* EXPONER FUNCIONES */
-window.exportCSV   = window.exportCSV;
-window.goTab       = window.goTab;
-window.applyFilters = window.applyFilters;
-window.commitLPS   = window.commitLPS;
-window.commitNota  = window.commitNota;
+window.exportCSV    = exportCSV;
+window.goTab        = goTab;
+window.applyFilters = applyFilters;
+window.commitLPS    = commitLPS;
+window.commitNota   = commitNota;
+window.loadModel    = loadModel;
+window.MODELS       = MODELS;
 
 /* RESET VIEW */
 window.resetView = function() {
