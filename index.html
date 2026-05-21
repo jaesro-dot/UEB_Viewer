@@ -31,7 +31,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 #lmsg{font-family:var(--mono);font-size:12px;color:var(--mu);text-align:center;max-width:280px;line-height:1.6}
 .mbx{display:flex;flex-direction:column;gap:7px;width:100%;max-width:310px}
 .mbt{font-family:var(--mono);font-size:11px;padding:10px 14px;border-radius:5px;border:1px solid var(--bd);background:var(--c2);color:var(--tx);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;transition:all .15s}
-.mbt:hover{background:var(--c3);border-color:rgba(255,255,255,.12)}
+.mbt:hover{background:var(--c3);border-color:rgba(255,255,255,.12)}.mbt:disabled{opacity:.4;cursor:wait}
 .mbt .mi{font-size:15px}
 .mbt .ml{font-size:12px;font-weight:500}
 .mbt .ms{font-size:10px;color:var(--mu);margin-top:1px}
@@ -120,13 +120,13 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
       <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">LPS Visor · UEB003-CED</div>
       <div id="sel-status" style="font-family:var(--mono);font-size:11px;color:var(--mu)">Iniciando visor...</div>
       <div class="mbx" id="mbox">
-        <button class="mbt" onclick="loadModel(MODELS[0])"><span class="mi">📐</span><span><span class="ml">EST — Estructural</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
-        <button class="mbt" onclick="loadModel(MODELS[1])"><span class="mi">📐</span><span><span class="ml">ARQ — Arquitectura</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
-        <button class="mbt" onclick="loadModel(MODELS[2])"><span class="mi">📐</span><span><span class="ml">SAN — Sanitarias</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
-        <button class="mbt" onclick="loadModel(MODELS[3])"><span class="mi">📐</span><span><span class="ml">IE — Inst. Eléctricas</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
-        <button class="mbt" onclick="loadModel(MODELS[4])"><span class="mi">📐</span><span><span class="ml">ICT — Comunicaciones</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
-        <button class="mbt" onclick="loadModel(MODELS[5])"><span class="mi">📐</span><span><span class="ml">MEC — Mecánicas</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
-        <button class="mbt" onclick="loadModel(MODELS[6])"><span class="mi">📐</span><span><span class="ml">ACI — Aire / Clima</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" disabled onclick="loadModel(MODELS[0])"><span class="mi">📐</span><span><span class="ml">EST — Estructural</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" disabled onclick="loadModel(MODELS[1])"><span class="mi">📐</span><span><span class="ml">ARQ — Arquitectura</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" disabled onclick="loadModel(MODELS[2])"><span class="mi">📐</span><span><span class="ml">SAN — Sanitarias</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" disabled onclick="loadModel(MODELS[3])"><span class="mi">📐</span><span><span class="ml">IE — Inst. Eléctricas</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" disabled onclick="loadModel(MODELS[4])"><span class="mi">📐</span><span><span class="ml">ICT — Comunicaciones</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" disabled onclick="loadModel(MODELS[5])"><span class="mi">📐</span><span><span class="ml">MEC — Mecánicas</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
+        <button class="mbt" disabled onclick="loadModel(MODELS[6])"><span class="mi">📐</span><span><span class="ml">ACI — Aire / Clima</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
       </div>
       <div class="ors">o pega una URL de Speckle</div>
       <div style="display:flex;gap:6px;width:100%;max-width:310px">
@@ -286,11 +286,12 @@ async function initViewer() {
     } catch(err) {}
   });
 
-  // Visor listo — actualizar status
+  // Visor listo — habilitar botones
+  document.querySelectorAll('#mbox .mbt').forEach(b => b.disabled = false);
   const selStatus = document.getElementById('sel-status');
   if (selStatus) selStatus.textContent = 'Selecciona el modelo a visualizar';
 
-  // Botones de modelos
+  // Botones dinámicos adicionales (ya no se usan, pero por si acaso)
   const mb = document.getElementById('mbox');
   MODELS.forEach(m => {
     const b = document.createElement('button'); b.className = 'mbt';
