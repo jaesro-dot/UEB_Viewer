@@ -206,53 +206,18 @@ async function initViewer() {
   S.filter = S.viewer.createExtension(FilteringExtension);
   S.sel    = S.viewer.createExtension(SelectionExtension);
 
+  // Evento select del viewer de Speckle
   S.viewer.on('select', hits => {
     if (!hits?.length) { desel(); return; }
-    const hit = hits[0];
-    // Speckle devuelve distintas estructuras — recorrer todas las posibilidades
-    const raw =
-      hit?.node?.model?.raw ||
-      hit?.object?.node?.model?.raw ||
-      hit?.raw ||
-      hit?.node?.raw ||
-      hit;
-    const id =
-      raw?.applicationId ||
-      raw?.id ||
-      hit?.node?.model?.id ||
-      '';
-    if (!id) { desel(); return; }
-
-    // Buscar elemento por id exacto o parcial
-    const el =
-      S.elements.find(e => e.id === id) ||
-      S.elements.find(e => e.id.endsWith(id) || id.endsWith(e.id));
-
-    // Abrir panel siempre — con o sin match en la lista
-    S.selId = id;
-    document.getElementById('nos').style.display = 'none';
-    document.getElementById('ep').style.display  = 'flex';
-
-    if (el) {
-      document.getElementById('epn').textContent = el.nombre;
-      document.getElementById('epm').textContent =
-        [el.nivel, el.sist, el.codigo].filter(x=>x&&x!=='—').join(' · ');
-      const cur = S.lps[el.id] || el.lpsIFC || '';
-      document.getElementById('lv').value = cur.startsWith('SEM') ? cur.slice(3) : cur;
-      document.getElementById('nv').value = S.nota[el.id] || '';
-      // Marcar en lista
-      document.querySelectorAll('.ei').forEach(i=>i.classList.remove('sl'));
-      const li = document.querySelector(`.ei[data-id="${el.id}"]`);
-      if (li) { li.classList.add('sl'); li.scrollIntoView({block:'nearest'}); }
-    } else {
-      document.getElementById('epn').textContent =
-        raw?.type || raw?.speckle_type || 'Elemento';
-      document.getElementById('epm').textContent = id.slice(0,28);
-      document.getElementById('lv').value = S.lps[id] ? S.lps[id].slice(3) : '';
-      document.getElementById('nv').value = S.nota[id] || '';
+    // Recorrer posibles estructuras de hits
+    for (const hit of hits) {
+      const raw = hit?.node?.model?.raw || hit?.raw || hit;
+      if (!raw) continue;
+      const id = raw.applicationId || raw.id || '';
+      if (!id || id.length < 3) continue;
+      openPanel(id, raw);
+      return;
     }
-    document.getElementById('lv').focus();
-    goTab('el');
   });
 
   // Botones de modelos
@@ -419,20 +384,8 @@ async function applyColors() {
 
 /* SELECCIÓN */
 function selEl(el) {
-  S.selId = el.id;
   if (S.sel) S.sel.selectObjects([el.id]).catch(()=>{});
-  document.getElementById('nos').style.display = 'none';
-  document.getElementById('ep').style.display  = 'flex';
-  document.getElementById('epn').textContent   = el.nombre;
-  document.getElementById('epm').textContent   = [el.nivel, el.sist, el.codigo].filter(x=>x&&x!=='—').join(' · ');
-  const cur = S.lps[el.id] || el.lpsIFC || '';
-  document.getElementById('lv').value = cur.startsWith('SEM') ? cur.slice(3) : cur;
-  document.getElementById('nv').value = S.nota[el.id] || '';
-  document.getElementById('lv').focus();
-  document.querySelectorAll('.ei').forEach(i => i.classList.remove('sl'));
-  const li = document.querySelector(`.ei[data-id="${el.id}"]`);
-  if (li) { li.classList.add('sl'); li.scrollIntoView({block:'nearest'}); }
-  goTab('el');
+  openPanel(el.id, null);
 }
 
 function desel() {
@@ -440,6 +393,36 @@ function desel() {
   document.getElementById('nos').style.display = 'flex';
   document.getElementById('ep').style.display  = 'none';
   document.querySelectorAll('.ei').forEach(i => i.classList.remove('sl'));
+}
+
+function openPanel(id, raw) {
+  S.selId = id;
+  document.getElementById('nos').style.display = 'none';
+  document.getElementById('ep').style.display  = 'flex';
+
+  const el = S.elements.find(e => e.id === id) ||
+             S.elements.find(e => id.endsWith(e.id) || e.id.endsWith(id));
+
+  if (el) {
+    document.getElementById('epn').textContent = el.nombre;
+    document.getElementById('epm').textContent =
+      [el.nivel, el.sist, el.codigo].filter(x => x && x !== '—').join(' · ');
+    const cur = S.lps[el.id] || el.lpsIFC || '';
+    document.getElementById('lv').value = cur.startsWith('SEM') ? cur.slice(3) : cur;
+    document.getElementById('nv').value = S.nota[el.id] || '';
+    document.querySelectorAll('.ei').forEach(i => i.classList.remove('sl'));
+    const li = document.querySelector(`.ei[data-id="${el.id}"]`);
+    if (li) { li.classList.add('sl'); li.scrollIntoView({block:'nearest'}); }
+  } else {
+    // Elemento no en lista — mostrar info básica igual
+    const nombre = raw?.type || raw?.speckle_type || raw?.name || 'Elemento';
+    document.getElementById('epn').textContent = nombre;
+    document.getElementById('epm').textContent = id.slice(0, 28);
+    document.getElementById('lv').value = S.lps[id] ? S.lps[id].slice(3) : '';
+    document.getElementById('nv').value = S.nota[id] || '';
+  }
+  document.getElementById('lv').focus();
+  goTab('el');
 }
 
 /* LPS — auto-pinta al salir */
@@ -488,7 +471,16 @@ function updCounts() {
 function renderElems() {
   const list = document.getElementById('el');
   list.innerHTML = '';
-  getFiltered().forEach(el => {
+  const filtered = getFiltered().filter(el => {
+    // Excluir: IDs hexadecimales largos, Vistas 3D, elementos sin nombre real
+    if (!el.nombre || el.nombre.length < 2) return false;
+    if (/^[0-9A-F]{20,}$/i.test(el.nombre)) return false;
+    if (el.nombre.startsWith('Vista 3D') || el.nombre.startsWith('View 3D')) return false;
+    if (el.nombre.startsWith('{') || el.nombre.startsWith('[')) return false;
+    return true;
+  });
+
+  filtered.forEach(el => {
     const lps = S.lps[el.id] || el.lpsIFC || '';
     const has = !!(S.lps[el.id] || el.tieneColor);
     const d = document.createElement('div');
@@ -498,7 +490,7 @@ function renderElems() {
       <div style="flex:1;min-width:0"><div class="en" title="${el.nombre}">${el.nombre}</div>
       <div class="em"><span>${el.nivel}</span><span>${el.sist}</span></div></div>
       <div class="ev" style="color:${has?'var(--ej)':'var(--mu)'}">${lps||'—'}</div>`;
-    d.onclick = () => selEl(el);
+    d.onclick = () => openPanel(el.id, null);
     list.appendChild(d);
   });
 }
