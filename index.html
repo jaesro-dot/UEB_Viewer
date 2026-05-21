@@ -276,23 +276,19 @@ async function loadModel(modelDef) {
       }
     } catch(e) { console.warn('GraphQL:', e); }
 
-    if (objectId) {
-      // 2a. Formato directo de objeto que SpeckleLoader acepta sin ambigüedad
-      // https://servidor/objects/projectId/objectId
-      const objUrl = `https://${server}/objects/${proj}/${objectId}`;
-      setLd(true, 'Cargando geometría...');
-      const loader = new SpeckleLoader(S.viewer.getWorldTree(), objUrl, '');
+    // UrlHelper es el método oficial de Speckle — resuelve cualquier URL de modelo
+    // a URLs de objetos que SpeckleLoader puede cargar directamente
+    setLd(true, 'Cargando geometría...');
+    const urls = await UrlHelper.getResourceUrls(modelDef.url);
+    if (!urls?.length) throw new Error(
+      'No se pudieron resolver las URLs del modelo.\n\n' +
+      'Verifica en Speckle:\n' +
+      '→ app.speckle.systems/projects/c9c081c5b1\n' +
+      '→ Settings → Visibility: Public'
+    );
+    for (const u of urls) {
+      const loader = new SpeckleLoader(S.viewer.getWorldTree(), u, '');
       await S.viewer.loadObject(loader, true);
-    } else {
-      // 2b. Fallback: UrlHelper
-      setLd(true, 'Cargando (modo alternativo)...');
-      const urls = await UrlHelper.getResourceUrls(modelDef.url);
-      if (!urls?.length) throw new Error(
-        'No se pudo resolver el modelo.\nVerifica que el proyecto sea PÚBLICO en Speckle:\napp.speckle.systems/projects/c9c081c5b1 → Settings → Public'
-      );
-      for (const u of urls) {
-        await S.viewer.loadObject(new SpeckleLoader(S.viewer.getWorldTree(), u, ''), true);
-      }
     }
 
     // 3. Leer propiedades
