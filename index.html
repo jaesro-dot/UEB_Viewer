@@ -259,8 +259,8 @@ header{background:var(--c1);border-bottom:1px solid var(--border);display:flex;a
 </div>
 
 <script type="module">
-import { Viewer, DefaultViewerParams, SpeckleLoader, CameraController,
-         SelectionExtension, FilteringExtension } from '@speckle/viewer';
+import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
+         CameraController, SelectionExtension, FilteringExtension } from '@speckle/viewer';
 
 /* ══════════════════════════════════════════
    ★ CONFIGURA TUS MODELOS AQUÍ ★
@@ -313,13 +313,30 @@ async function initViewer() {
   S.filter    = S.viewer.createExtension(FilteringExtension);
   S.selection = S.viewer.createExtension(SelectionExtension);
 
-  // Selección al hacer clic
-  S.viewer.on('select', async (objs) => {
-    if (!objs || !objs.length) { desel(); return; }
-    const obj = objs[0];
-    const id  = obj.id || obj.applicationId;
-    const el  = S.elements.find(e => e.id === id || e.appId === id);
+  // Selección al hacer clic — Speckle emite hits con node del WorldTree
+  S.viewer.on('select', async (hits) => {
+    if (!hits || !hits.length) { desel(); return; }
+    const hit  = hits[0];
+    // El nodo tiene el raw object con id y applicationId
+    const node = hit.node || hit;
+    const raw  = node?.model?.raw || node?.raw || hit;
+    const id   = raw?.id || raw?.applicationId || raw?.speckle_type;
+    if (!id) { desel(); return; }
+    // Buscar en elementos por id o appId
+    let el = S.elements.find(e => e.id === id || e.appId === id);
+    // Si no se encuentra directamente, buscar por id parcial
+    if (!el) el = S.elements.find(e => id.includes(e.id) || e.id.includes(id));
     if (el) selEl(el);
+    else {
+      // Mostrar info básica aunque no esté en la lista
+      document.getElementById('no-sel').style.display = 'none';
+      document.getElementById('edit-panel').style.display = 'flex';
+      document.getElementById('ep-n').textContent = raw?.type || raw?.speckle_type || 'Elemento';
+      document.getElementById('ep-m').textContent = `id: ${id}`;
+      document.getElementById('lps-val').value = '';
+      document.getElementById('nota-val').value = '';
+      S.selId = id;
+    }
   });
 
   // Renderizar botones de modelos
@@ -358,29 +375,28 @@ async function loadModel(modelDef) {
     S.elements = [];
     S.selId    = null;
 
-    // Obtener el objectId del último commit via API REST de Speckle
-    setLoading(true, `Obteniendo versión de ${modelDef.label}...`);
-    const apiUrl = `https://${server}/api/graphql`;
-    const query  = `{ project(id:"${projectId}") { model(id:"${modelId}") { versions(limit:1) { items { referencedObject } } } } }`;
-    const apiRes = await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
-    });
-    const apiData = await apiRes.json();
-    const objectId = apiData?.data?.project?.model?.versions?.items?.[0]?.referencedObject;
-    if (!objectId) throw new Error('No se pudo obtener el objeto del modelo.\nVerifica que el proyecto sea público en Speckle (Settings → Public).');
+    setLoading(true, `Cargando ${modelDef.label}...`);
 
-    // URL del objeto para SpeckleLoader
-    const objectUrl = `https://${server}/projects/${projectId}/models/${modelId}@${objectId}`;
-    setLoading(true, `Cargando geometría de ${modelDef.label}...`);
+    // Patrón oficial Speckle: UrlHelper.getResourceUrls() resuelve la URL
+    // del modelo a URLs de objetos concretos que SpeckleLoader puede cargar
+    const resourceUrls = await UrlHelper.getResourceUrls(modelDef.url);
+    if (!resourceUrls || !resourceUrls.length) {
+      throw new Error(
+        'No se obtuvieron URLs del modelo.\n' +
+        'Verifica que el proyecto sea público en Speckle:\n' +
+        'app.speckle.systems → tu proyecto → Settings → Public'
+      );
+    }
 
-    const loader = new SpeckleLoader(
-      S.viewer.getWorldTree(),
-      objectUrl,
-      null // sin token — proyecto público
-    );
-    await S.viewer.loadObject(loader, true);
+    for (const resourceUrl of resourceUrls) {
+      setLoading(true, `Cargando geometría...`);
+      const loader = new SpeckleLoader(
+        S.viewer.getWorldTree(),
+        resourceUrl,
+        '' // token vacío — proyecto público
+      );
+      await S.viewer.loadObject(loader, true);
+    }
 
     // Extraer elementos
     setLoading(true, 'Leyendo propiedades...');
@@ -411,48 +427,70 @@ function parseSpeckleUrl(url) {
 async function extractElements(sist) {
   const tree = S.viewer.getWorldTree();
   S.elements = [];
+  const seen = new Set();
 
   tree.walk(node => {
     const raw = node.model?.raw;
     if (!raw) return true;
 
-    // Filtrar solo elementos constructivos (tienen type o speckle_type)
-    const type = raw.type || raw.speckle_type || '';
-    if (!type || type.includes('DataChunk') || type.includes('Base')) return true;
+    const spType = (raw.speckle_type || raw.type || '').toLowerCase();
 
-    const id     = raw.id || raw.applicationId || '';
-    const appId  = raw.applicationId || raw.id || '';
-    const nombre = raw.type || raw.name || raw.family || type || 'Elemento';
+    // Solo objetos con geometría real (tienen displayValue o meshes)
+    const hasGeo = raw.displayValue || raw['@displayValue'] ||
+                   raw.displayMesh  || raw['@displayMesh'] ||
+                   raw.geometry;
+    if (!hasGeo && !spType.includes('revit')) return true;
 
-    // Propiedades
-    const params  = raw.parameters || raw.Parameters || {};
-    const nivel   = extractParam(params, ['NIVEL','Level','level','nivel','Nivel']) || raw.level || '—';
-    const sistEl  = extractParam(params, ['SISTEMA','DISCIPLINA','Sistema','Disciplina']) || sist;
-    const lpsIFC  = extractParam(params, ['LPS','lps']) || '';
-    const codigo  = extractParam(params, ['CODIGO','Codigo','CODE']) || '';
-    const partida = extractParam(params, ['PARTIDA','Partida']) || '';
+    // Filtrar tipos no constructivos
+    if (spType.includes('chunk') || spType.includes('base') ||
+        spType.includes('view')  || spType.includes('level') ||
+        spType.includes('grid')  || spType === 'objects.base') return true;
 
-    if (!id) return true;
-    // Evitar duplicados
-    if (S.elements.find(e => e.id === id)) return true;
+    const id    = raw.applicationId || raw.id || '';
+    if (!id || seen.has(id)) return true;
+    seen.add(id);
 
-    S.elements.push({ id, appId, nombre, nivel, sist: sistEl, lpsIFC, codigo, partida });
+    const nombre = raw.type || raw.name || raw.family ||
+                   raw.speckle_type?.split('.').pop() || 'Elemento';
+
+    // Parámetros Revit — estructura: raw.parameters.NOMBRE_PARAM.value
+    const params = raw.parameters || raw.Parameters || raw.props || {};
+
+    function getP(keys) {
+      for (const k of keys) {
+        // Busca directo
+        if (params[k] !== undefined && params[k] !== null) {
+          const v = params[k];
+          if (v && typeof v === 'object' && 'value' in v) return String(v.value || '');
+          if (typeof v === 'string' || typeof v === 'number') return String(v);
+        }
+        // Busca en todos los params por name
+        for (const pk of Object.keys(params)) {
+          const pobj = params[pk];
+          if (pobj && typeof pobj === 'object') {
+            const pname = (pobj.name || pobj.Name || pk || '').toUpperCase();
+            if (pname === k.toUpperCase() && pobj.value !== undefined)
+              return String(pobj.value || '');
+          }
+        }
+      }
+      return '';
+    }
+
+    // Level desde propiedad directa o parámetro
+    const levelRaw = raw.level?.name || raw.level || raw.Level?.name || '';
+    const nivel    = getP(['NIVEL','nivel','Level','level']) || levelRaw || '—';
+    const sistEl   = getP(['SISTEMA','DISCIPLINA','sistema']) || sist;
+    const lpsIFC   = getP(['LPS','lps']);
+    const codigo   = getP(['CODIGO','Codigo','CODE','code']);
+    const partida  = getP(['PARTIDA','Partida','partida']);
+
+    S.elements.push({ id, appId: id, nombre, nivel, sist: sistEl, lpsIFC, codigo, partida });
     return true;
   });
 
   document.getElementById('status-tag').textContent =
     `${S.activeModel?.label || ''} · ${S.elements.length} elementos`;
-}
-
-function extractParam(params, keys) {
-  for (const k of keys) {
-    if (params[k] !== undefined && params[k] !== null) {
-      const v = params[k];
-      if (typeof v === 'object' && v.value !== undefined) return String(v.value);
-      return String(v);
-    }
-  }
-  return '';
 }
 
 /* ══════════════════════════════════════════
@@ -677,6 +715,13 @@ document.getElementById('custom-load-btn').addEventListener('click', async () =>
   const sist = prompt('¿Disciplina? (EST, SAN, ARQ, MEP...)', 'EST') || 'GEN';
   await loadModel({ label: url.split('/').pop(), url, sist });
 });
+
+// Aviso si se abre como archivo local (file://)
+if (location.protocol === 'file:') {
+  document.getElementById('load-sub').innerHTML =
+    '<span style="color:var(--pend)">⚠ Abre desde GitHub Pages para que funcionen todos los modelos<br>' +
+    'Los módulos ES necesitan HTTPS</span>';
+}
 
 // Exponer funciones de tabs y export al scope global
 window.goTab      = goTab;
