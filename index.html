@@ -118,7 +118,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
     <!-- Selector de modelos - se oculta al cargar uno -->
     <div id="model-selector" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,16,.94);z-index:49">
       <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">LPS Visor · UEB003-CED</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--mu)">Selecciona el modelo a visualizar</div>
+      <div id="sel-status" style="font-family:var(--mono);font-size:11px;color:var(--mu)">Iniciando visor...</div>
       <div class="mbx" id="mbox">
         <button class="mbt" onclick="loadModel(MODELS[0])"><span class="mi">📐</span><span><span class="ml">EST — Estructural</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
         <button class="mbt" onclick="loadModel(MODELS[1])"><span class="mi">📐</span><span><span class="ml">ARQ — Arquitectura</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
@@ -286,6 +286,10 @@ async function initViewer() {
     } catch(err) {}
   });
 
+  // Visor listo — actualizar status
+  const selStatus = document.getElementById('sel-status');
+  if (selStatus) selStatus.textContent = 'Selecciona el modelo a visualizar';
+
   // Botones de modelos
   const mb = document.getElementById('mbox');
   MODELS.forEach(m => {
@@ -298,6 +302,11 @@ async function initViewer() {
 
 /* CARGAR MODELO */
 async function loadModel(modelDef) {
+  // Esperar a que el viewer esté inicializado
+  let tries = 0;
+  while (!S.viewer && tries < 30) { await new Promise(r => setTimeout(r, 200)); tries++; }
+  if (!S.viewer) { alert('El visor aún no está listo. Espera un momento e intenta de nuevo.'); return; }
+
   setLd(true, `Cargando ${modelDef.label}...`);
   S.active = modelDef;
   try {
