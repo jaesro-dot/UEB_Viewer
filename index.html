@@ -102,6 +102,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
   <div class="sep"></div>
   <span id="stag">Selecciona un modelo</span>
   <div class="hr">
+    <button class="btn" onclick="resetView()" title="Vista inicial">⌂</button>
     <button class="btn gn" onclick="exportCSV()">CSV → Dynamo</button>
   </div>
 </header>
@@ -182,7 +183,8 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 
 <script type="module">
 import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
-         CameraController, SelectionExtension, FilteringExtension } from '@speckle/viewer';
+         CameraController, SelectionExtension, FilteringExtension,
+         ViewerEvent } from '@speckle/viewer';
 
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
@@ -206,38 +208,19 @@ async function initViewer() {
   S.filter = S.viewer.createExtension(FilteringExtension);
   S.sel    = S.viewer.createExtension(SelectionExtension);
 
-  // Click directo en el canvas — más confiable que el evento 'select'
-  const svCanvas = document.getElementById('sv').querySelector('canvas') ||
-                   document.getElementById('sv');
-
-  document.getElementById('sv').addEventListener('click', async (e) => {
-    if (!S.elements.length) return;
-    // Pequeño delay para que el viewer procese el click
-    await new Promise(r => setTimeout(r, 50));
-    try {
-      // Intentar getObjectsAt si existe
-      if (S.viewer.getObjectsAt) {
-        const rect = document.getElementById('sv').getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = (e.clientY - rect.top)  / rect.height;
-        const hits = await S.viewer.getObjectsAt(x, y);
-        if (hits?.length) {
-          const hit = hits[0];
-          const raw = hit?.node?.model?.raw || hit?.raw || hit;
-          const id  = raw?.applicationId || raw?.id || '';
-          if (id) { openPanel(id, raw); return; }
-        }
-      }
-    } catch(err) { console.warn('getObjectsAt:', err); }
-  });
-
-  // También escuchar el evento select como respaldo
-  S.viewer.on('select', hits => {
-    if (!hits?.length) { desel(); return; }
-    for (const hit of hits) {
-      const raw = hit?.node?.model?.raw || hit?.object?.model?.raw || hit?.raw || hit;
-      const id  = raw?.applicationId || raw?.id || '';
-      if (id && id.length > 3) { openPanel(id, raw); return; }
+  // API correcto: ViewerEvent.ObjectClicked con SelectionExtension
+  S.viewer.on(ViewerEvent.ObjectClicked, (selectionEvent) => {
+    if (!selectionEvent || !selectionEvent.hits || !selectionEvent.hits.length) {
+      desel(); return;
+    }
+    const hit = selectionEvent.hits[0];
+    // El raw del objeto está en el nodo del árbol
+    const raw = hit?.node?.model?.raw || hit?.raw || {};
+    const id  = raw?.applicationId || raw?.id || hit?.object?.id || '';
+    if (id && id.length > 2) {
+      openPanel(id, raw);
+    } else {
+      desel();
     }
   });
 
@@ -597,6 +580,12 @@ window.goTab       = window.goTab;
 window.applyFilters = window.applyFilters;
 window.commitLPS   = window.commitLPS;
 window.commitNota  = window.commitNota;
+
+/* RESET VIEW */
+window.resetView = function() {
+  if (!S.viewer) return;
+  S.viewer.zoom();
+};
 
 /* ARRANCAR */
 await initViewer();
