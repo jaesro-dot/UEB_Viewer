@@ -203,7 +203,7 @@ const MODELS = [
 ];
 
 /* ESTADO */
-const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, active:null };
+const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, active:null };
 
 /* INIT VIEWER */
 async function initViewer() {
@@ -216,15 +216,14 @@ async function initViewer() {
   // Triple fallback para capturar el click en el viewer
   function handleViewerHit(hit) {
     if (!hit) return false;
-    const raw = hit?.node?.model?.raw || hit?.object?.node?.model?.raw || hit?.raw || hit;
-    const id  = raw?.applicationId || raw?.id || '';
-    // Debug: ver estructura del hit
-    console.log('HIT:', JSON.stringify({
-      id, 
-      type: raw?.type || raw?.speckle_type,
-      keys: Object.keys(raw||{}).slice(0,8)
-    }));
-    if (id && id.length > 2) { openPanel(id, raw); return true; }
+    const node = hit?.node || hit?.object?.node || hit;
+    const raw  = node?.model?.raw || hit?.raw || hit;
+    // El nodeId es lo que setUserObjectColors necesita
+    const nodeId = node?.model?.id || node?.id || '';
+    const rawId  = raw?.applicationId || raw?.id || '';
+    const id = rawId || nodeId;
+    console.log('HIT:', {rawId, nodeId, type: raw?.type||raw?.speckle_type});
+    if (id && id.length > 2) { openPanel(id, raw, nodeId); return true; }
     return false;
   }
 
@@ -407,7 +406,8 @@ async function extractElements(sist) {
     const tieneColor = lpsIFC || ejecutado === 'Sí' || ejecutado === '.T.' ||
                        ejecutado?.toLowerCase() === 'true';
 
-    S.elements.push({ id, nombre, nivel, sist:sistEl, lpsIFC, ejecutado, tieneColor, codigo, partida });
+    const nodeId = node?.model?.id || id;
+    S.elements.push({ id, nodeId, nombre, nivel, sist:sistEl, lpsIFC, ejecutado, tieneColor, codigo, partida });
     return true;
   });
 
@@ -420,42 +420,15 @@ async function applyColors() {
   window._speckleFilter = S.filter;
   const st = document.getElementById('color-status');
 
-  // Recolectar todos los ids desde el WorldTree
-  // El viewer usa el 'id' interno del objeto, no el applicationId
-  const idMap = {}; // applicationId -> [speckleId, ...]
-  try {
-    S.viewer.getWorldTree().walk(node => {
-      const raw = node?.model?.raw;
-      if (!raw) return true;
-      const appId = raw.applicationId || '';
-      const intId = raw.id || '';
-      if (appId && intId) {
-        if (!idMap[appId]) idMap[appId] = new Set();
-        idMap[appId].add(intId);
-        idMap[appId].add(appId);
-      }
-      return true;
-    });
-  } catch(e) {}
+  // Usar nodeId cuando está disponible, fallback a id
+  const lpsIds   = S.elements.filter(e => S.lps[e.id]||S.lps[e.nodeId]).map(e => e.nodeId||e.id);
+  const ifcIds   = S.elements.filter(e => !S.lps[e.id]&&!S.lps[e.nodeId]&&e.lpsIFC).map(e => e.nodeId||e.id);
+  const noLpsIds = S.elements.filter(e => !S.lps[e.id]&&!S.lps[e.nodeId]&&!e.lpsIFC).map(e => e.nodeId||e.id);
 
-  function resolveIds(appIds) {
-    const out = new Set();
-    appIds.forEach(aid => {
-      if (idMap[aid]) idMap[aid].forEach(id => out.add(id));
-      else out.add(aid); // fallback
-    });
-    return [...out];
-  }
+  // También incluir el selNodeId actual si acaba de guardarse
+  if (S.selNodeId && S.lps[S.selId] && !lpsIds.includes(S.selNodeId)) lpsIds.push(S.selNodeId);
 
-  const lpsAppIds   = S.elements.filter(e => S.lps[e.id]).map(e => e.id);
-  const ifcAppIds   = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).map(e => e.id);
-  const noLpsAppIds = S.elements.filter(e => !S.lps[e.id] && !e.lpsIFC).map(e => e.id);
-
-  const lpsIds   = resolveIds(lpsAppIds);
-  const ifcIds   = resolveIds(ifcAppIds);
-  const noLpsIds = resolveIds(noLpsAppIds);
-
-  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; st.textContent=`coloreando ${lpsIds.length} elem...`; }
+  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; st.textContent=`${lpsIds.length} guardados`; }
 
   try {
     const f = S.filter;
@@ -485,7 +458,8 @@ function desel() {
   document.querySelectorAll('.ei').forEach(i => i.classList.remove('sl'));
 }
 
-function openPanel(id, raw) {
+function openPanel(id, raw, nodeId) {
+  S.selNodeId = nodeId || id; // ID interno del nodo para coloreado
   S.selId = id;
   document.getElementById('nos').style.display = 'none';
   document.getElementById('ep').style.display  = 'flex';
@@ -545,7 +519,14 @@ function loadFromStorage() {
 window.commitLPS = async function() {
   const id = S.selId; if (!id) return;
   const raw = document.getElementById('lv').value.trim();
-  if (raw) S.lps[id] = 'SEM' + raw; else delete S.lps[id];
+  if (raw) {
+    S.lps[id] = 'SEM' + raw;
+    // También indexar por nodeId si es diferente
+    if (S.selNodeId && S.selNodeId !== id) S.lps[S.selNodeId] = 'SEM' + raw;
+  } else {
+    delete S.lps[id];
+    if (S.selNodeId) delete S.lps[S.selNodeId];
+  }
   saveToStorage();
   await applyColors();
   updateUI();
