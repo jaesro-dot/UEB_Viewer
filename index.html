@@ -286,8 +286,9 @@ async function initViewer() {
     } catch(err) {}
   });
 
-  // Visor listo — habilitar botones
+  // Visor listo — habilitar botones y disparar evento
   document.querySelectorAll('#mbox .mbt').forEach(b => b.disabled = false);
+  window.dispatchEvent(new CustomEvent('viewer-ready'));
   const selStatus = document.getElementById('sel-status');
   if (selStatus) selStatus.textContent = 'Selecciona el modelo a visualizar';
 
@@ -304,9 +305,24 @@ async function initViewer() {
 /* CARGAR MODELO */
 async function loadModel(modelDef) {
   // Esperar a que el viewer esté inicializado
-  let tries = 0;
-  while (!S.viewer && tries < 30) { await new Promise(r => setTimeout(r, 200)); tries++; }
-  if (!S.viewer) { alert('El visor aún no está listo. Espera un momento e intenta de nuevo.'); return; }
+  if (!S.viewer) {
+    await new Promise((resolve, reject) => {
+      // Escuchar el evento viewer-ready
+      const onReady = () => { window.removeEventListener('viewer-ready', onReady); resolve(); };
+      window.addEventListener('viewer-ready', onReady);
+      // Fallback: polling por si el evento ya pasó
+      const check = setInterval(() => {
+        if (S.viewer) { clearInterval(check); window.removeEventListener('viewer-ready', onReady); resolve(); }
+      }, 500);
+      // Timeout de 60 segundos
+      setTimeout(() => {
+        clearInterval(check);
+        window.removeEventListener('viewer-ready', onReady);
+        if (!S.viewer) reject(new Error('El visor tardó demasiado. Recarga la página.'));
+        else resolve();
+      }, 60000);
+    });
+  }
 
   setLd(true, `Cargando ${modelDef.label}...`);
   S.active = modelDef;
