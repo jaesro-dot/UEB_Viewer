@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>LPS Visor · UEB003-CED</title>
-<script type="importmap">{"imports":{"@speckle/viewer":"https://esm.sh/@speckle/viewer@2.19.5","three":"https://esm.sh/three@0.164.1"}}</script>
+<script type="importmap">{"imports":{"@speckle/viewer":"https://esm.sh/@speckle/viewer@2.19.5"}}</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -208,20 +208,54 @@ async function initViewer() {
   S.filter = S.viewer.createExtension(FilteringExtension);
   S.sel    = S.viewer.createExtension(SelectionExtension);
 
-  // API correcto: ViewerEvent.ObjectClicked con SelectionExtension
-  S.viewer.on(ViewerEvent.ObjectClicked, (selectionEvent) => {
-    if (!selectionEvent || !selectionEvent.hits || !selectionEvent.hits.length) {
-      desel(); return;
-    }
-    const hit = selectionEvent.hits[0];
-    // El raw del objeto está en el nodo del árbol
-    const raw = hit?.node?.model?.raw || hit?.raw || {};
-    const id  = raw?.applicationId || raw?.id || hit?.object?.id || '';
-    if (id && id.length > 2) {
-      openPanel(id, raw);
-    } else {
+  // Triple fallback para capturar el click en el viewer
+  function handleViewerHit(hit) {
+    if (!hit) return false;
+    const raw = hit?.node?.model?.raw || hit?.object?.node?.model?.raw || hit?.raw || hit;
+    const id  = raw?.applicationId || raw?.id || '';
+    if (id && id.length > 2) { openPanel(id, raw); return true; }
+    return false;
+  }
+
+  // Método 1: ViewerEvent.ObjectClicked (API oficial)
+  try {
+    const evName = ViewerEvent?.ObjectClicked || 'object-clicked';
+    S.viewer.on(evName, (ev) => {
+      const hits = ev?.hits || (Array.isArray(ev) ? ev : [ev]);
+      for (const h of hits) { if (handleViewerHit(h)) return; }
       desel();
-    }
+    });
+  } catch(e) { console.warn('ViewerEvent.ObjectClicked no disponible'); }
+
+  // Método 2: 'select' genérico
+  try {
+    S.viewer.on('select', (hits) => {
+      if (!hits?.length) { desel(); return; }
+      for (const h of hits) { if (handleViewerHit(h)) return; }
+    });
+  } catch(e) {}
+
+  // Método 3: click directo en el canvas del viewer con query
+  const vwDiv = document.getElementById('vw');
+  let _lastClick = 0;
+  vwDiv.addEventListener('pointerup', async (e) => {
+    const now = Date.now();
+    if (now - _lastClick < 200) return; // debounce
+    _lastClick = now;
+    if (!S.elements.length) return;
+    await new Promise(r => setTimeout(r, 80));
+    try {
+      // Intentar query del viewer si existe
+      const query = S.viewer.query || S.viewer.raycast;
+      if (query) {
+        const rect = vwDiv.getBoundingClientRect();
+        const result = await query({ point: {
+          x: (e.clientX - rect.left) / rect.width,
+          y: (e.clientY - rect.top)  / rect.height
+        }});
+        if (result?.hits?.length) { handleViewerHit(result.hits[0]); return; }
+      }
+    } catch(err) {}
   });
 
   // Botones de modelos
