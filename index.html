@@ -158,7 +158,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
             onblur="commitNota()"></textarea>
         </div>
         <button onclick="guardarLPS()" style="width:100%;padding:8px;border-radius:5px;border:none;background:var(--ej);color:#fff;font-family:var(--mono);font-size:12px;font-weight:500;cursor:pointer;transition:all .2s" id="btn-guardar">
-          ✓ Guardar y colorear
+          ✓ Guardar
         </button>
       </div>
       <div class="nos" id="nos"><div class="ico">🖱️</div><span>Toca un elemento en el visor</span></div>
@@ -188,7 +188,6 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
          CameraController, SelectionExtension, FilteringExtension,
          ViewerEvent } from '@speckle/viewer';
-import * as THREE from 'https://esm.sh/three@0.133.0';
 
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
@@ -410,46 +409,63 @@ async function extractElements(sist) {
 
 /* COLOREADO */
 async function applyColors() {
+  const lpsSet = new Set(S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id));
+  const noLpsSet = new Set(S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id));
+
+  // Método 1: FilteringExtension.setUserObjectColors
   try {
-    // Colorear via FilteringExtension si está disponible
     if (S.filter && typeof S.filter.setUserObjectColors === 'function') {
-      const withLPS    = S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id);
-      const withoutLPS = S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id);
       await S.filter.resetFilters();
       const groups = [];
-      if (withLPS.length)    groups.push({ objectIds: withLPS,    color: '#10b981' });
-      if (withoutLPS.length) groups.push({ objectIds: withoutLPS, color: '#374151' });
-      if (groups.length) { await S.filter.setUserObjectColors(groups); return; }
+      if (lpsSet.size)   groups.push({ objectIds:[...lpsSet],   color:'#10b981' });
+      if (noLpsSet.size) groups.push({ objectIds:[...noLpsSet], color:'#374151' });
+      if (groups.length) {
+        await S.filter.setUserObjectColors(groups);
+        return;
+      }
+    }
+  } catch(e) { console.warn('setUserObjectColors:', e.message); }
+
+  // Método 2: Batch rendering del viewer
+  try {
+    const renderer = S.viewer.getRenderer?.();
+    if (renderer) {
+      lpsSet.forEach(id => {
+        renderer.setObjectsColorFilter?.([id], new renderer.THREE?.Color(0x10b981));
+      });
+      return;
     }
   } catch(e) {}
 
-  // Fallback: colorear directamente en el WorldTree via Three.js
+  // Método 3: Acceder a los meshes via SpeckleRenderer
   try {
     const tree = S.viewer.getWorldTree();
-    const greenColor  = new THREE.Color(0x10b981);
-    const defaultColor = new THREE.Color(0x9ca3af);
-    const lpsSet = new Set(S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id));
-
     tree.walk(node => {
-      const raw = node.model?.raw;
+      const raw = node?.model?.raw;
       if (!raw) return true;
       const id = raw.applicationId || raw.id || '';
       if (!id) return true;
-      // Aplicar color a todos los renderViews del nodo
-      const rvs = node.model?.renderViews || [];
-      rvs.forEach(rv => {
-        if (rv.batchObject?.batch?.mesh?.material) {
-          const mat = rv.batchObject.batch.mesh.material;
-          if (Array.isArray(mat)) {
-            mat.forEach(m => m.color?.copy(lpsSet.has(id) ? greenColor : defaultColor));
-          } else if (mat.color) {
-            mat.color.copy(lpsSet.has(id) ? greenColor : defaultColor);
-          }
-        }
+      const hasLPS = lpsSet.has(id);
+      // Buscar renderViews en el nodo
+      const rv = node.model?.renderViews;
+      if (!rv?.length) return true;
+      rv.forEach(v => {
+        try {
+          // Acceder al batch mesh
+          const mesh = v.batchObject?.batch?.mesh || v.renderObject;
+          if (!mesh) return;
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          mats.forEach(m => {
+            if (m?.color?.setHex) {
+              m.color.setHex(hasLPS ? 0x10b981 : 0x374151);
+              m.needsUpdate = true;
+            }
+          });
+        } catch(err) {}
       });
       return true;
     });
-  } catch(e2) { console.warn('applyColors fallback:', e2); }
+  } catch(e3) { console.warn('applyColors m3:', e3.message); }
 }
 
 /* SELECCIÓN */
