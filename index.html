@@ -292,14 +292,7 @@ async function initViewer() {
   const selStatus = document.getElementById('sel-status');
   if (selStatus) selStatus.textContent = 'Selecciona el modelo a visualizar';
 
-  // Botones dinámicos adicionales (ya no se usan, pero por si acaso)
-  const mb = document.getElementById('mbox');
-  MODELS.forEach(m => {
-    const b = document.createElement('button'); b.className = 'mbt';
-    b.innerHTML = `<span class="mi">📐</span><span><span class="ml">${m.label}</span><span class="ms" style="display:block">Cargar modelo</span></span>`;
-    b.onclick = () => loadModel(m);
-    mb.appendChild(b);
-  });
+  // Botones ya están en HTML — no añadir duplicados
 }
 
 /* CARGAR MODELO */
@@ -465,17 +458,18 @@ async function extractElements(sist) {
 async function applyColors() {
   const st = document.getElementById('color-status');
   const lpsIds = [...new Set(Object.keys(S.lps))];
-  if (!lpsIds.length) return;
   
   if (st) { st.style.display='inline'; st.style.color='var(--ac)';
-            st.textContent=`coloreando ${lpsIds.length}...`; }
+            st.textContent=`coloreando...`; }
   try {
     const f = S.filter;
-    // resetFilters primero para limpiar estado previo
     await f.resetFilters();
-    // Luego colorear: verde para los que tienen LPS
-    await f.setUserObjectColors([{ objectIds: lpsIds, color: '#10b981' }]);
-    if (st) { st.textContent='✓ '+lpsIds.length+' coloreados'; st.style.color='var(--ej)'; }
+    const groups = [];
+    if (lpsIds.length) groups.push({ objectIds: lpsIds, color: '#10b981' });
+    if (groups.length) await f.setUserObjectColors(groups);
+    // Forzar render inmediato
+    try { S.viewer.requestRender(); } catch(e) {}
+    if (st) { st.textContent='✓ '+lpsIds.length+' guardados'; st.style.color='var(--ej)'; }
   } catch(e) {
     console.error('applyColors:', e);
     if (st) { st.textContent='Error: '+e.message; st.style.color='var(--pe)'; }
