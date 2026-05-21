@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>LPS Visor · UEB003-CED</title>
+<script type="importmap">{"imports":{"@speckle/viewer":"https://esm.sh/@speckle/viewer@2.19.5","three":"https://esm.sh/three@0.164.1"}}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--c0:#0a0c10;--c1:#111318;--c2:#1a1d24;--c3:#252932;--c4:#353b47;--bd:rgba(255,255,255,.06);--tx:#e2e4e9;--mu:#6b7280;--ac:#3b82f6;--ej:#10b981;--pe:#f59e0b;--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif}
+html,body{height:100%;overflow:hidden;background:var(--c0);color:var(--tx);font-family:var(--sans)}
+#app{display:grid;grid-template-rows:52px 1fr;height:100vh}
+header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 14px;gap:10px;z-index:200}
+.logo{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--ac);white-space:nowrap}
+.sep{width:1px;height:20px;background:var(--bd)}
+#stag{font-family:var(--mono);font-size:10px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hr{margin-left:auto;display:flex;gap:6px;align-items:center}
+.btn{font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--tx);cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:hover{background:var(--c4)}
+.btn.ac{background:var(--ac);border-color:var(--ac);color:#fff}
+.btn.gn{background:rgba(16,185,129,.15);border-color:var(--ej);color:var(--ej)}
+#main{display:grid;grid-template-columns:1fr 310px;overflow:hidden;position:relative}
+#vw{position:relative;background:#1a1c21}
+#sv{width:100%;height:100%}
+/* loading */
+#ld{position:absolute;inset:0;background:rgba(10,12,16,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:50}
+#ld.h{display:none}
+.sp{width:34px;height:34px;border:2px solid var(--bd);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#lmsg{font-family:var(--mono);font-size:12px;color:var(--mu);text-align:center;max-width:280px;line-height:1.6}
+.mbx{display:flex;flex-direction:column;gap:7px;width:100%;max-width:310px}
+.mbt{font-family:var(--mono);font-size:11px;padding:10px 14px;border-radius:5px;border:1px solid var(--bd);background:var(--c2);color:var(--tx);cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;transition:all .15s}
+.mbt:hover{background:var(--c3);border-color:rgba(255,255,255,.12)}
+.mbt .mi{font-size:15px}
+.mbt .ml{font-size:12px;font-weight:500}
+.mbt .ms{font-size:10px;color:var(--mu);margin-top:1px}
+.ors{font-family:var(--mono);font-size:10px;color:var(--mu);text-align:center}
+/* panel */
+#pn{background:var(--c1);border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid var(--bd)}
+.tab{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;padding:11px 0;color:var(--mu);cursor:pointer;border:none;border-bottom:2px solid transparent;background:none;transition:all .15s}
+.tab.on{color:var(--tx);border-bottom-color:var(--ac)}
+.tc{display:none;flex:1;overflow:hidden;flex-direction:column}
+.tc.on{display:flex}
+.flt{padding:10px 12px;display:flex;flex-direction:column;gap:7px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.flbl{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);margin-bottom:2px}
+.fsel{font-family:var(--mono);font-size:11px;padding:5px 8px;border-radius:4px;border:1px solid var(--bd);background:var(--c2);color:var(--tx);width:100%;outline:none}
+.fsel:focus{border-color:rgba(59,130,246,.4)}
+.leg{padding:8px 12px;display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.lr{display:flex;align-items:center;gap:7px;font-size:11px}
+.ld{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.lc{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--mu);background:var(--c3);padding:1px 5px;border-radius:3px;min-width:22px;text-align:center}
+#el{flex:1;overflow-y:auto}
+.ei{padding:8px 12px;border-bottom:1px solid var(--bd);cursor:pointer;display:flex;align-items:flex-start;gap:7px;transition:background .1s}
+.ei:hover{background:var(--c2)}
+.ei.sl{background:rgba(59,130,246,.08);border-left:2px solid var(--ac);padding-left:10px}
+.edot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.ei .en{font-size:11px;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ei .em{font-family:var(--mono);font-size:10px;color:var(--mu);margin-top:2px;display:flex;gap:5px}
+.ei .ev{font-family:var(--mono);font-size:10px;white-space:nowrap;align-self:flex-end}
+#ep{padding:12px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--bd);flex-shrink:0;background:var(--c2)}
+.ep-l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--mu)}
+.ep-n{font-size:12px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ep-m{font-family:var(--mono);font-size:10px;color:var(--mu)}
+.lw{display:flex;align-items:center;border:1px solid var(--bd);border-radius:5px;overflow:hidden;background:var(--c2);transition:border-color .15s}
+.lw:focus-within{border-color:rgba(59,130,246,.6)}
+.lp{font-family:var(--mono);font-size:14px;font-weight:500;padding:9px 0 9px 12px;color:var(--ac);user-select:none;flex-shrink:0}
+.ls{font-family:var(--mono);font-size:14px;color:var(--c4);padding:9px 3px;user-select:none}
+#lv{flex:1;font-family:var(--mono);font-size:14px;padding:9px 10px 9px 2px;background:transparent;border:none;color:var(--tx);outline:none;min-width:0}
+#lv::placeholder{color:var(--c4);font-size:12px}
+#nv{width:100%;font-family:var(--sans);font-size:12px;padding:7px 9px;background:var(--c3);border:1px solid var(--bd);border-radius:4px;color:var(--tx);outline:none;resize:vertical;min-height:44px;max-height:80px}
+#nv:focus{border-color:rgba(59,130,246,.4)}
+#nv::placeholder{color:var(--mu)}
+.hint{font-family:var(--mono);font-size:9px;color:var(--mu)}
+.nos{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;color:var(--mu);font-size:12px;text-align:center;padding:20px}
+.nos .ico{font-size:28px;opacity:.3}
+#rl{flex:1;overflow-y:auto}
+.ri{padding:7px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:7px;cursor:pointer}
+.ri:hover{background:var(--c2)}
+.ri .rv{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--ej);flex-shrink:0}
+.ri .rn{flex:1;font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ri .rz{font-family:var(--mono);font-size:10px;color:var(--mu)}
+.sum{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.sc{background:var(--c2);border-radius:5px;padding:9px;border:1px solid var(--bd)}
+.sn{font-family:var(--mono);font-size:22px;font-weight:500}
+.sl{font-size:10px;color:var(--mu);margin-top:1px}
+.br{display:flex;justify-content:space-between;align-items:center;background:var(--c2);padding:5px 8px;border-radius:3px;font-size:11px;margin-bottom:3px}
+.bl{color:var(--mu);font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+.bv{display:flex;gap:7px;font-family:var(--mono);font-size:10px;flex-shrink:0}
+.ew{padding:9px 12px;border-top:1px solid var(--bd);flex-shrink:0}
+#fab{display:none;position:absolute;bottom:14px;right:14px;z-index:100;width:44px;height:44px;border-radius:50%;background:var(--ac);border:none;cursor:pointer;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+@media(max-width:640px){#main{grid-template-columns:1fr}#pn{position:absolute;bottom:0;left:0;right:0;max-height:55vh;z-index:100;border-top:1px solid var(--bd);border-left:none;transform:translateY(100%);transition:transform .3s}#pn.op{transform:translateY(0)}#fab{display:flex;align-items:center;justify-content:center}}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <span class="logo">LPS · VISOR</span>
+  <div class="sep"></div>
+  <span id="stag">Selecciona un modelo</span>
+  <div class="hr">
+    <button class="btn gn" onclick="exportCSV()">CSV → Dynamo</button>
+  </div>
+</header>
+<div id="main">
+  <div id="vw">
+    <div id="sv"></div>
+    <div id="ld">
+      <div class="sp" id="sp" style="display:none"></div>
+      <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">LPS Visor · UEB003-CED</div>
+      <div id="lmsg">Selecciona el modelo a visualizar</div>
+      <div class="mbx" id="mbox"></div>
+      <div class="ors">o pega una URL de Speckle</div>
+      <div style="display:flex;gap:6px;width:100%;max-width:310px">
+        <input id="curl" type="text" placeholder="https://app.speckle.systems/projects/..."
+          style="flex:1;font-family:var(--mono);font-size:11px;padding:7px 10px;border-radius:4px;border:1px solid var(--bd);background:var(--c2);color:var(--tx);outline:none">
+        <button class="btn ac" id="cbtn">Cargar</button>
+      </div>
+    </div>
+  </div>
+  <div id="pn">
+    <div class="tabs">
+      <button class="tab on" onclick="goTab('el')">Elementos</button>
+      <button class="tab"    onclick="goTab('re')">Registros</button>
+      <button class="tab"    onclick="goTab('rs')">Resumen</button>
+    </div>
+    <div class="tc on" id="tc-el">
+      <div class="flt">
+        <div><div class="flbl">Nivel</div><select class="fsel" id="fn" onchange="applyFilters()"><option value="">Todos</option></select></div>
+        <div><div class="flbl">Sistema</div><select class="fsel" id="fs" onchange="applyFilters()"><option value="">Todos</option></select></div>
+      </div>
+      <div class="leg">
+        <div class="lr"><div class="ld" style="background:var(--ej)"></div><span>Con LPS</span><span class="lc" id="cc">0</span></div>
+        <div class="lr"><div class="ld" style="background:var(--c4)"></div><span>Sin LPS</span><span class="lc" id="cs">0</span></div>
+      </div>
+      <div id="ep" style="display:none">
+        <div><div class="ep-l">Elemento</div><div class="ep-n" id="epn">—</div></div>
+        <div class="ep-m" id="epm">—</div>
+        <div>
+          <div class="flbl" style="margin-bottom:5px">Parámetro LPS</div>
+          <div class="lw">
+            <span class="lp">SEM</span><span class="ls">····</span>
+            <input type="text" id="lv" placeholder="37  /  38A  /  37-PAR"
+              autocomplete="off" spellcheck="false"
+              onkeydown="if(event.key==='Enter')this.blur()"
+              onblur="commitLPS()">
+          </div>
+          <div class="hint" style="margin-top:3px">Al salir del campo → se pinta en el visor</div>
+        </div>
+        <div>
+          <div class="flbl" style="margin-bottom:4px">Nota</div>
+          <textarea id="nv" placeholder="Restricción, responsable, avance..."
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur()}"
+            onblur="commitNota()"></textarea>
+        </div>
+      </div>
+      <div class="nos" id="nos"><div class="ico">🖱️</div><span>Toca un elemento en el visor</span></div>
+      <div id="el"></div>
+    </div>
+    <div class="tc" id="tc-re">
+      <div id="rl"><div class="nos" id="nr"><div class="ico">📋</div><span>Sin registros aún</span></div></div>
+      <div class="ew"><button class="btn gn" style="width:100%" onclick="exportCSV()">Exportar CSV → Dynamo</button></div>
+    </div>
+    <div class="tc" id="tc-rs">
+      <div class="sum">
+        <div class="sg">
+          <div class="sc"><div class="sn" id="stt" style="color:var(--ac)">0</div><div class="sl">Total</div></div>
+          <div class="sc"><div class="sn" id="stc" style="color:var(--ej)">0</div><div class="sl">Con LPS</div></div>
+        </div>
+        <div><div class="flbl" style="margin-bottom:5px">Por nivel</div><div id="byn"></div></div>
+        <div><div class="flbl" style="margin-bottom:5px">Por sistema</div><div id="bys"></div></div>
+      </div>
+      <div class="ew"><button class="btn gn" style="width:100%" onclick="exportCSV()">Exportar CSV → Dynamo</button></div>
+    </div>
+  </div>
+  <button id="fab" onclick="document.getElementById('pn').classList.toggle('op')">☰</button>
+</div>
+</div>
+
+<script type="module">
+import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
+         CameraController, SelectionExtension, FilteringExtension } from '@speckle/viewer';
+
+/* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
+const MODELS = [
+  { label:'EST — Estructural',      url:'https://app.speckle.systems/projects/c9c081c5b1/models/c89a3e7e5c', sist:'EST' },
+  { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/6ba967132f', sist:'ARQ' },
+  { label:'SAN — Sanitarias',       url:'https://app.speckle.systems/projects/c9c081c5b1/models/6db9f15e0e', sist:'SAN' },
+  { label:'IE  — Inst. Eléctricas', url:'https://app.speckle.systems/projects/c9c081c5b1/models/aa98c3b773', sist:'IE'  },
+  { label:'ICT — Comunicaciones',   url:'https://app.speckle.systems/projects/c9c081c5b1/models/3bbdd652d0', sist:'ICT' },
+  { label:'MEC — Mecánicas',        url:'https://app.speckle.systems/projects/c9c081c5b1/models/f06dd7c628', sist:'MEC' },
+  { label:'ACI — Aire / Clima',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/378f828fe0', sist:'ACI' },
+];
+
+/* ESTADO */
+const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, active:null };
+
+/* INIT VIEWER */
+async function initViewer() {
+  S.viewer = new Viewer(document.getElementById('sv'), { ...DefaultViewerParams, showStats:false, verbose:false });
+  await S.viewer.init();
+  S.viewer.createExtension(CameraController);
+  S.filter = S.viewer.createExtension(FilteringExtension);
+  S.sel    = S.viewer.createExtension(SelectionExtension);
+
+  S.viewer.on('select', hits => {
+    if (!hits?.length) { desel(); return; }
+    // Speckle puede devolver distintas estructuras según la versión
+    const hit  = hits[0];
+    const node = hit?.node || hit?.object || hit;
+    const raw  = node?.model?.raw || node?.raw || hit?.raw || hit;
+    const id   = raw?.applicationId || raw?.id || '';
+    // Buscar en elementos
+    let el = S.elements.find(e => e.id === id);
+    if (!el && id) {
+      // Búsqueda flexible
+      el = S.elements.find(e =>
+        e.id === id ||
+        e.id.endsWith(id) ||
+        id.endsWith(e.id)
+      );
+    }
+    if (el) {
+      selEl(el);
+    } else {
+      // Mostrar panel con info básica y permitir editar LPS
+      S.selId = id || 'unknown';
+      document.getElementById('nos').style.display = 'none';
+      document.getElementById('ep').style.display  = 'flex';
+      document.getElementById('epn').textContent   = raw?.type || raw?.speckle_type || 'Elemento seleccionado';
+      document.getElementById('epm').textContent   = id ? id.slice(0,24)+'...' : 'Sin ID';
+      document.getElementById('lv').value = id && S.lps[id] ? S.lps[id].slice(3) : '';
+      document.getElementById('nv').value = id ? (S.nota[id] || '') : '';
+      document.getElementById('lv').focus();
+    }
+  });
+
+  // Botones de modelos
+  const mb = document.getElementById('mbox');
+  MODELS.forEach(m => {
+    const b = document.createElement('button'); b.className = 'mbt';
+    b.innerHTML = `<span class="mi">📐</span><span><span class="ml">${m.label}</span><span class="ms" style="display:block">Cargar modelo</span></span>`;
+    b.onclick = () => loadModel(m);
+    mb.appendChild(b);
+  });
+}
+
+/* CARGAR MODELO */
+async function loadModel(modelDef) {
+  setLd(true, `Cargando ${modelDef.label}...`);
+  S.active = modelDef;
+  try {
+    const parsed = parseUrl(modelDef.url);
+    if (!parsed) throw new Error('URL inválida');
+    const { server, proj, mdl } = parsed;
+
+    await S.viewer.unloadAll();
+    S.elements = []; S.selId = null;
+
+    // 1. Obtener objectId via GraphQL (CORS abierto en /graphql para proyectos públicos)
+    setLd(true, 'Obteniendo versión...');
+    let objectId = null;
+    try {
+      const gr = await fetch(`https://${server}/graphql`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'Accept':'application/json' },
+        body: JSON.stringify({ query:`{project(id:"${proj}"){model(id:"${mdl}"){versions(limit:1){items{referencedObject}}}}}` })
+      });
+      const gt = await gr.text();
+      if (gt.trim()[0] === '{') {
+        const gj = JSON.parse(gt);
+        objectId = gj?.data?.project?.model?.versions?.items?.[0]?.referencedObject;
+      }
+    } catch(e) { console.warn('GraphQL:', e); }
+
+    if (objectId) {
+      // 2a. Cargar con objectId explícito
+      const objUrl = `https://${server}/projects/${proj}/models/${mdl}@${objectId}`;
+      setLd(true, 'Cargando geometría...');
+      const loader = new SpeckleLoader(S.viewer.getWorldTree(), objUrl, '');
+      await S.viewer.loadObject(loader, true);
+    } else {
+      // 2b. Fallback: UrlHelper
+      setLd(true, 'Cargando (modo alternativo)...');
+      const urls = await UrlHelper.getResourceUrls(modelDef.url);
+      if (!urls?.length) throw new Error(
+        'No se pudo resolver el modelo.\nVerifica que el proyecto sea PÚBLICO en Speckle:\napp.speckle.systems/projects/c9c081c5b1 → Settings → Public'
+      );
+      for (const u of urls) {
+        await S.viewer.loadObject(new SpeckleLoader(S.viewer.getWorldTree(), u, ''), true);
+      }
+    }
+
+    // 3. Leer propiedades
+    setLd(true, 'Leyendo propiedades...');
+    await extractElements(modelDef.sist);
+    updateUI();
+    setLd(false);
+    document.getElementById('stag').textContent = `${modelDef.label} · ${S.elements.length} elem.`;
+
+  } catch(e) {
+    console.error(e); setLd(false);
+    alert(`Error cargando "${modelDef.label}":\n\n${e.message}`);
+  }
+}
+
+function parseUrl(url) {
+  const m = url.match(/https?:\/\/([^/]+)\/projects\/([^/]+)\/models\/([^/?#]+)/);
+  return m ? { server:m[1], proj:m[2], mdl:m[3] } : null;
+}
+
+/* EXTRAER ELEMENTOS DEL ÁRBOL */
+async function extractElements(sist) {
+  const tree = S.viewer.getWorldTree();
+  S.elements = [];
+  const seen = new Set();
+
+  tree.walk(node => {
+    const raw = node.model?.raw;
+    if (!raw) return true;
+    const st = (raw.speckle_type || raw.type || '').toLowerCase();
+    if (!st || st.includes('chunk') || st.includes('datastore') ||
+        st.includes('view') || st === 'objects.base') return true;
+
+    // Solo nodos con geometría real
+    const hasGeo = raw['@displayValue'] || raw.displayValue ||
+                   raw['@displayMesh']  || raw.displayMesh;
+    if (!hasGeo) return true;
+
+    const id = raw.applicationId || raw.id || '';
+    if (!id || seen.has(id)) return true;
+    seen.add(id);
+
+    const nombre = raw.type || raw.name || raw.family ||
+                   raw.speckle_type?.split('.').pop() || 'Elemento';
+
+    // Leer parámetros — Revit los exporta como {name, value, units}
+    const params = raw.parameters || raw.Parameters || {};
+    function gp(keys) {
+      for (const k of keys) {
+        // Búsqueda directa por clave
+        if (params[k] !== undefined && params[k] !== null) {
+          const v = params[k];
+          if (v && typeof v === 'object' && 'value' in v) return String(v.value ?? '');
+          if (typeof v !== 'object') return String(v);
+        }
+        // Búsqueda por nombre dentro de cada parámetro
+        for (const pk of Object.keys(params)) {
+          const po = params[pk];
+          if (po && typeof po === 'object') {
+            const pn = (po.name || po.Name || pk).toUpperCase();
+            if (pn === k.toUpperCase() && po.value !== undefined)
+              return String(po.value ?? '');
+          }
+        }
+      }
+      return '';
+    }
+
+    const nivel   = gp(['NIVEL','nivel','Level','level']) || raw.level?.name || raw.Level?.name || '—';
+    const sistEl  = gp(['SISTEMA','DISCIPLINA','sistema','disciplina']) || sist;
+    const lpsIFC  = gp(['LPS','lps']);
+    const codigo  = gp(['CODIGO','Codigo','CODE','code','Código']);
+    const partida = gp(['PARTIDA','Partida','partida']);
+
+    S.elements.push({ id, nombre, nivel, sist:sistEl, lpsIFC, codigo, partida });
+    return true;
+  });
+
+  // Colorear elementos que ya tienen LPS en el IFC
+  await applyColors();
+}
+
+/* COLOREADO */
+async function applyColors() {
+  if (!S.filter) return;
+  try {
+    await S.filter.resetFilters();
+    const withLPS    = S.elements.filter(e => S.lps[e.id] || e.lpsIFC).map(e => e.id);
+    const withoutLPS = S.elements.filter(e => !S.lps[e.id] && !e.lpsIFC).map(e => e.id);
+    const colorGroups = [];
+    if (withLPS.length)    colorGroups.push({ objectIds: withLPS,    color: '#10b981' });
+    if (withoutLPS.length) colorGroups.push({ objectIds: withoutLPS, color: '#374151' });
+    if (colorGroups.length) {
+      await S.filter.setUserObjectColors(colorGroups);
+    }
+  } catch(e) { console.warn('applyColors:', e); }
+}
+
+/* SELECCIÓN */
+function selEl(el) {
+  S.selId = el.id;
+  if (S.sel) S.sel.selectObjects([el.id]).catch(()=>{});
+  document.getElementById('nos').style.display = 'none';
+  document.getElementById('ep').style.display  = 'flex';
+  document.getElementById('epn').textContent   = el.nombre;
+  document.getElementById('epm').textContent   = [el.nivel, el.sist, el.codigo].filter(x=>x&&x!=='—').join(' · ');
+  const cur = S.lps[el.id] || el.lpsIFC || '';
+  document.getElementById('lv').value = cur.startsWith('SEM') ? cur.slice(3) : cur;
+  document.getElementById('nv').value = S.nota[el.id] || '';
+  document.getElementById('lv').focus();
+  document.querySelectorAll('.ei').forEach(i => i.classList.remove('sl'));
+  const li = document.querySelector(`.ei[data-id="${el.id}"]`);
+  if (li) { li.classList.add('sl'); li.scrollIntoView({block:'nearest'}); }
+  goTab('el');
+}
+
+function desel() {
+  S.selId = null;
+  document.getElementById('nos').style.display = 'flex';
+  document.getElementById('ep').style.display  = 'none';
+  document.querySelectorAll('.ei').forEach(i => i.classList.remove('sl'));
+}
+
+/* LPS — auto-pinta al salir */
+window.commitLPS = async function() {
+  const id = S.selId; if (!id) return;
+  const raw = document.getElementById('lv').value.trim();
+  if (raw) S.lps[id] = 'SEM' + raw; else delete S.lps[id];
+  await applyColors();
+  updateUI();
+};
+
+window.commitNota = function() {
+  const id = S.selId; if (!id) return;
+  const v = document.getElementById('nv').value.trim();
+  if (v) S.nota[id] = v; else delete S.nota[id];
+};
+
+/* FILTROS */
+function getFiltered() {
+  const n = document.getElementById('fn').value;
+  const s = document.getElementById('fs').value;
+  return S.elements.filter(e => (!n || e.nivel === n) && (!s || e.sist === s));
+}
+window.applyFilters = function() { renderElems(); };
+
+function updateFilters() {
+  const niv = [...new Set(S.elements.map(e=>e.nivel).filter(x=>x&&x!=='—'))].sort();
+  const sis = [...new Set(S.elements.map(e=>e.sist).filter(Boolean))].sort();
+  const fn = document.getElementById('fn'), fs = document.getElementById('fs');
+  const cn = fn.value, cs = fs.value;
+  fn.innerHTML = '<option value="">Todos los niveles</option>';
+  niv.forEach(n => { const o=document.createElement('option'); o.value=n; o.textContent=n; if(n===cn)o.selected=true; fn.appendChild(o); });
+  fs.innerHTML = '<option value="">Todos los sistemas</option>';
+  sis.forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; if(s===cs)o.selected=true; fs.appendChild(o); });
+}
+
+/* UI */
+function updateUI() { updateFilters(); renderElems(); renderRegs(); renderSum(); updCounts(); }
+
+function updCounts() {
+  const c = S.elements.filter(e => S.lps[e.id] || e.lpsIFC).length;
+  document.getElementById('cc').textContent = c;
+  document.getElementById('cs').textContent = S.elements.length - c;
+}
+
+function renderElems() {
+  const list = document.getElementById('el');
+  list.innerHTML = '';
+  getFiltered().forEach(el => {
+    const lps = S.lps[el.id] || el.lpsIFC || '';
+    const has = !!lps;
+    const d = document.createElement('div');
+    d.className = 'ei' + (el.id === S.selId ? ' sl' : '');
+    d.dataset.id = el.id;
+    d.innerHTML = `<div class="edot" style="background:${has?'var(--ej)':'var(--c4)'}"></div>
+      <div style="flex:1;min-width:0"><div class="en" title="${el.nombre}">${el.nombre}</div>
+      <div class="em"><span>${el.nivel}</span><span>${el.sist}</span></div></div>
+      <div class="ev" style="color:${has?'var(--ej)':'var(--mu)'}">${lps||'—'}</div>`;
+    d.onclick = () => selEl(el);
+    list.appendChild(d);
+  });
+}
+
+function renderRegs() {
+  const list = document.getElementById('rl');
+  document.getElementById('nr').style.display = Object.keys(S.lps).length ? 'none' : 'flex';
+  list.querySelectorAll('.ri').forEach(i => i.remove());
+  S.elements.filter(e => S.lps[e.id]).forEach(el => {
+    const d = document.createElement('div'); d.className = 'ri';
+    const nota = S.nota[el.id] ? ` · ${S.nota[el.id]}` : '';
+    d.innerHTML = `<div class="ld" style="background:var(--ej)"></div>
+      <span class="rv">${S.lps[el.id]}</span>
+      <span class="rn" title="${el.nombre}${nota}">${el.nombre}${nota}</span>
+      <span class="rz">${el.nivel}</span>`;
+    d.onclick = () => selEl(el);
+    list.appendChild(d);
+  });
+}
+
+function renderSum() {
+  document.getElementById('stt').textContent = S.elements.length;
+  document.getElementById('stc').textContent = S.elements.filter(e => S.lps[e.id] || e.lpsIFC).length;
+  function mkB(cid, kfn) {
+    const g = {}; S.elements.forEach(e => { const k = kfn(e); if(!g[k])g[k]={t:0,c:0}; g[k].t++; if(S.lps[e.id]||e.lpsIFC)g[k].c++; });
+    document.getElementById(cid).innerHTML = Object.entries(g).sort()
+      .map(([k,v])=>`<div class="br"><span class="bl">${k}</span><span class="bv"><span style="color:var(--ej)">${v.c}</span><span style="color:var(--mu)">${v.t}</span></span></div>`).join('');
+  }
+  mkB('byn', e => e.nivel||'—');
+  mkB('bys', e => e.sist||'—');
+}
+
+/* TABS */
+window.goTab = function(t) {
+  const tabs=['el','re','rs'], ids=['tc-el','tc-re','tc-rs'];
+  document.querySelectorAll('.tab').forEach((b,i)=>b.classList.toggle('on',tabs[i]===t));
+  document.querySelectorAll('.tc').forEach((c,i)=>{const on=ids[i]==='tc-'+t;c.classList.toggle('on',on);c.style.display=on?'flex':'none';});
+};
+
+/* EXPORT CSV */
+window.exportCSV = function() {
+  if (!S.elements.length) { alert('Carga un modelo primero.'); return; }
+  const rows = S.elements.map(el => {
+    const lps = S.lps[el.id] || el.lpsIFC || '';
+    return [el.id, `"${el.nombre}"`, lps, lps?'.T.':'.F.', el.nivel, el.sist, el.codigo, `"${el.partida}"`, `"${S.nota[el.id]||''}"`].join(',');
+  });
+  const csv = '\uFEFF' + ['GlobalId,Nombre,LPS,EJECUTADO,Nivel,Sistema,Codigo,Partida,Nota', ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.download = 'LPS_UEB003CED_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+};
+
+/* LOADING */
+function setLd(on, msg='') {
+  if (on) {
+    document.getElementById('ld').classList.remove('h');
+    document.getElementById('sp').style.display = 'block';
+    if (msg) document.getElementById('lmsg').textContent = msg;
+  } else {
+    document.getElementById('ld').classList.add('h');
+    document.getElementById('sp').style.display = 'none';
+  }
+}
+
+/* URL PERSONALIZADA */
+document.getElementById('cbtn').addEventListener('click', async () => {
+  const url = document.getElementById('curl').value.trim();
+  if (!url) return;
+  if (!parseUrl(url)) { alert('URL no válida.\nFormato: https://app.speckle.systems/projects/ID/models/ID'); return; }
+  const sist = prompt('¿Disciplina? (EST, SAN, ARQ, MEP...)', 'GEN') || 'GEN';
+  await loadModel({ label: url.split('/').pop(), url, sist });
+});
+
+/* EXPONER FUNCIONES */
+window.exportCSV   = window.exportCSV;
+window.goTab       = window.goTab;
+window.applyFilters = window.applyFilters;
+window.commitLPS   = window.commitLPS;
+window.commitNota  = window.commitNota;
+
+/* ARRANCAR */
+await initViewer();
+</script>
+</body>
+</html>
