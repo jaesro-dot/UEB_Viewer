@@ -204,6 +204,7 @@ const MODELS = [
 
 /* ESTADO */
 const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, selHitIds:[], active:null };
+window.S = S; // exponer para debug y acceso desde funciones window.*
 
 /* INIT VIEWER */
 async function initViewer() {
@@ -212,6 +213,7 @@ async function initViewer() {
   S.viewer.createExtension(CameraController);
   S.filter = S.viewer.createExtension(FilteringExtension);
   S.sel    = S.viewer.createExtension(SelectionExtension);
+  window._speckleFilter = S.filter; // exponer para debug
 
   // Triple fallback para capturar el click en el viewer
   function handleViewerHit(hit) {
@@ -524,6 +526,7 @@ window.commitLPS = async function() {
   ids.forEach(i => { if (lpsVal) S.lps[i] = lpsVal; else delete S.lps[i]; });
   // También guardar bajo id principal
   if (lpsVal) S.lps[id] = lpsVal; else delete S.lps[id];
+  console.log('S.lps keys:', Object.keys(S.lps).length, S.lps);
   saveToStorage();
   await applyColors();
   updateUI();
