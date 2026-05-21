@@ -277,8 +277,9 @@ async function loadModel(modelDef) {
     } catch(e) { console.warn('GraphQL:', e); }
 
     if (objectId) {
-      // 2a. Cargar con objectId explícito
-      const objUrl = `https://${server}/projects/${proj}/models/${mdl}@${objectId}`;
+      // 2a. Formato directo de objeto que SpeckleLoader acepta sin ambigüedad
+      // https://servidor/objects/projectId/objectId
+      const objUrl = `https://${server}/objects/${proj}/${objectId}`;
       setLd(true, 'Cargando geometría...');
       const loader = new SpeckleLoader(S.viewer.getWorldTree(), objUrl, '');
       await S.viewer.loadObject(loader, true);
