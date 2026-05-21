@@ -186,10 +186,22 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 </div>
 </div>
 
-<script type="module">
-import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
-         CameraController, SelectionExtension, FilteringExtension,
-         ViewerEvent } from '@speckle/viewer';
+<script>
+// Variables globales para el viewer
+let Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
+    CameraController, SelectionExtension, FilteringExtension, ViewerEvent;
+
+async function loadSpeckleModules() {
+  const m = await import('https://esm.sh/@speckle/viewer@2.19.5');
+  Viewer = m.Viewer;
+  DefaultViewerParams = m.DefaultViewerParams;
+  SpeckleLoader = m.SpeckleLoader;
+  UrlHelper = m.UrlHelper;
+  CameraController = m.CameraController;
+  SelectionExtension = m.SelectionExtension;
+  FilteringExtension = m.FilteringExtension;
+  ViewerEvent = m.ViewerEvent;
+}
 
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
@@ -213,7 +225,7 @@ async function initViewer() {
   S.viewer.createExtension(CameraController);
   S.filter = S.viewer.createExtension(FilteringExtension);
   S.sel    = S.viewer.createExtension(SelectionExtension);
-  window._speckleFilter = S.filter; // exponer para debug
+  // window.S ya apunta al mismo objeto S, así que S.filter es accesible como window.S.filter
 
   // Triple fallback para capturar el click en el viewer
   function handleViewerHit(hit) {
@@ -423,21 +435,18 @@ async function extractElements(sist) {
 /* COLOREADO */
 async function applyColors() {
   const st = document.getElementById('color-status');
-  const lpsIds = Object.keys(S.lps); // todos los IDs guardados (nodeId + rawId)
+  const lpsIds = [...new Set(Object.keys(S.lps))];
+  if (!lpsIds.length) return;
+  
   if (st) { st.style.display='inline'; st.style.color='var(--ac)';
             st.textContent=`coloreando ${lpsIds.length}...`; }
   try {
     const f = S.filter;
-    // NO llamar resetFilters antes — puede limpiar el estado
-    // Llamar directamente con solo los elementos con LPS
-    const result = await f.setUserObjectColors([
-      ...(lpsIds.length ? [{ objectIds: lpsIds, color: '#10b981' }] : [])
-    ]);
-    console.log('setUserObjectColors result:', result);
-    // Forzar re-render
-    try { S.viewer.requestRender?.(); } catch(e) {}
-    try { S.viewer.render?.(); } catch(e) {}
-    if (st) { st.textContent='✓ Coloreado'; st.style.color='var(--ej)'; }
+    // resetFilters primero para limpiar estado previo
+    await f.resetFilters();
+    // Luego colorear: verde para los que tienen LPS
+    await f.setUserObjectColors([{ objectIds: lpsIds, color: '#10b981' }]);
+    if (st) { st.textContent='✓ '+lpsIds.length+' coloreados'; st.style.color='var(--ej)'; }
   } catch(e) {
     console.error('applyColors:', e);
     if (st) { st.textContent='Error: '+e.message; st.style.color='var(--pe)'; }
@@ -716,11 +725,14 @@ window.resetView = function() {
   }
 };
 
-/* CARGAR DATOS GUARDADOS */
-loadFromStorage();
-
-/* ARRANCAR */
-await initViewer();
+/* MAIN - función principal */
+async function main() {
+  await loadSpeckleModules();
+  loadFromStorage();
+  await initViewer();
+}
+main();
+main().catch(console.error);
 </script>
 </body>
 </html>
