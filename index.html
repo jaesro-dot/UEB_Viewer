@@ -187,7 +187,7 @@ import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
   { label:'EST — Estructural',      url:'https://app.speckle.systems/projects/c9c081c5b1/models/c89a3e7e5c', sist:'EST' },
-  { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/6ba967132f', sist:'ARQ' },
+  { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/ab599871dd', sist:'ARQ' },
   { label:'SAN — Sanitarias',       url:'https://app.speckle.systems/projects/c9c081c5b1/models/6db9f15e0e', sist:'SAN' },
   { label:'IE  — Inst. Eléctricas', url:'https://app.speckle.systems/projects/c9c081c5b1/models/aa98c3b773', sist:'IE'  },
   { label:'ICT — Comunicaciones',   url:'https://app.speckle.systems/projects/c9c081c5b1/models/3bbdd652d0', sist:'ICT' },
@@ -208,34 +208,51 @@ async function initViewer() {
 
   S.viewer.on('select', hits => {
     if (!hits?.length) { desel(); return; }
-    // Speckle puede devolver distintas estructuras según la versión
-    const hit  = hits[0];
-    const node = hit?.node || hit?.object || hit;
-    const raw  = node?.model?.raw || node?.raw || hit?.raw || hit;
-    const id   = raw?.applicationId || raw?.id || '';
-    // Buscar en elementos
-    let el = S.elements.find(e => e.id === id);
-    if (!el && id) {
-      // Búsqueda flexible
-      el = S.elements.find(e =>
-        e.id === id ||
-        e.id.endsWith(id) ||
-        id.endsWith(e.id)
-      );
-    }
+    const hit = hits[0];
+    // Speckle devuelve distintas estructuras — recorrer todas las posibilidades
+    const raw =
+      hit?.node?.model?.raw ||
+      hit?.object?.node?.model?.raw ||
+      hit?.raw ||
+      hit?.node?.raw ||
+      hit;
+    const id =
+      raw?.applicationId ||
+      raw?.id ||
+      hit?.node?.model?.id ||
+      '';
+    if (!id) { desel(); return; }
+
+    // Buscar elemento por id exacto o parcial
+    const el =
+      S.elements.find(e => e.id === id) ||
+      S.elements.find(e => e.id.endsWith(id) || id.endsWith(e.id));
+
+    // Abrir panel siempre — con o sin match en la lista
+    S.selId = id;
+    document.getElementById('nos').style.display = 'none';
+    document.getElementById('ep').style.display  = 'flex';
+
     if (el) {
-      selEl(el);
+      document.getElementById('epn').textContent = el.nombre;
+      document.getElementById('epm').textContent =
+        [el.nivel, el.sist, el.codigo].filter(x=>x&&x!=='—').join(' · ');
+      const cur = S.lps[el.id] || el.lpsIFC || '';
+      document.getElementById('lv').value = cur.startsWith('SEM') ? cur.slice(3) : cur;
+      document.getElementById('nv').value = S.nota[el.id] || '';
+      // Marcar en lista
+      document.querySelectorAll('.ei').forEach(i=>i.classList.remove('sl'));
+      const li = document.querySelector(`.ei[data-id="${el.id}"]`);
+      if (li) { li.classList.add('sl'); li.scrollIntoView({block:'nearest'}); }
     } else {
-      // Mostrar panel con info básica y permitir editar LPS
-      S.selId = id || 'unknown';
-      document.getElementById('nos').style.display = 'none';
-      document.getElementById('ep').style.display  = 'flex';
-      document.getElementById('epn').textContent   = raw?.type || raw?.speckle_type || 'Elemento seleccionado';
-      document.getElementById('epm').textContent   = id ? id.slice(0,24)+'...' : 'Sin ID';
-      document.getElementById('lv').value = id && S.lps[id] ? S.lps[id].slice(3) : '';
-      document.getElementById('nv').value = id ? (S.nota[id] || '') : '';
-      document.getElementById('lv').focus();
+      document.getElementById('epn').textContent =
+        raw?.type || raw?.speckle_type || 'Elemento';
+      document.getElementById('epm').textContent = id.slice(0,28);
+      document.getElementById('lv').value = S.lps[id] ? S.lps[id].slice(3) : '';
+      document.getElementById('nv').value = S.nota[id] || '';
     }
+    document.getElementById('lv').focus();
+    goTab('el');
   });
 
   // Botones de modelos
@@ -322,10 +339,17 @@ async function extractElements(sist) {
     if (!st || st.includes('chunk') || st.includes('datastore') ||
         st.includes('view') || st === 'objects.base') return true;
 
-    // Solo nodos con geometría real
+    // Solo nodos con geometría real y tipo Revit reconocible
     const hasGeo = raw['@displayValue'] || raw.displayValue ||
                    raw['@displayMesh']  || raw.displayMesh;
     if (!hasGeo) return true;
+
+    // Excluir tipos de categoría, familia y tipo (no son instancias)
+    if (st.includes('revittype') || st.includes('familytype') ||
+        st.includes('category')  || st.includes('elementtype') ||
+        nombre.toLowerCase().includes(':') === false && 
+        (st === 'objects.other.revit.parameter' || st === 'objects.other.revit.collection'))
+      return true;
 
     const id = raw.applicationId || raw.id || '';
     if (!id || seen.has(id)) return true;
