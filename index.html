@@ -406,11 +406,13 @@ async function extractElements(sist) {
     seen.add(id);
 
     // nombre declarado DESPUÉS del guard de id
-    // type="none" en Speckle significa que hay que leer otros campos
-    const nombre = (raw.type && raw.type !== 'none' ? raw.type : null) ||
-                   raw.name || raw.family || raw.elementId ||
-                   (raw.speckle_type && raw.speckle_type !== 'none' ? raw.speckle_type.split('.').pop() : null) ||
-                   'Elemento';
+    // Leer nombre: priorizar family+type de Revit, luego otros campos
+    const _type   = raw.type   && raw.type   !== 'none' ? raw.type   : null;
+    const _family = raw.family && raw.family !== 'none' ? raw.family : null;
+    const _name   = raw.name   && raw.name   !== 'none' && raw.name !== 'Parts - Part' ? raw.name : null;
+    const _spType = raw.speckle_type && !raw.speckle_type.includes('Base') ? 
+                    raw.speckle_type.split('.').pop() : null;
+    const nombre  = _type || _name || _family || raw.elementId || _spType || 'Elemento';
 
     // Leer parámetros — Revit los exporta como {name, value, units}
     const params = raw.parameters || raw.Parameters || {};
@@ -553,14 +555,13 @@ window.commitLPS = async function() {
   const id = S.selId; if (!id) return;
   const val = document.getElementById('lv').value.trim();
   const lpsVal = val ? 'SEM' + val : null;
-  // Guardar bajo TODOS los IDs del elemento seleccionado
   const ids = S.selHitIds?.length ? S.selHitIds : [id];
   ids.forEach(i => { if (lpsVal) S.lps[i] = lpsVal; else delete S.lps[i]; });
-  // También guardar bajo id principal
   if (lpsVal) S.lps[id] = lpsVal; else delete S.lps[id];
-  console.log('S.lps keys:', Object.keys(S.lps).length, S.lps);
   saveToStorage();
   await applyColors();
+  // Segundo render tras breve delay para asegurar visibilidad inmediata
+  setTimeout(() => applyColors(), 150);
   updateUI();
 };
 
@@ -628,13 +629,13 @@ function renderElems() {
   const EXCLUIR = ['RenderMaterial','Vista 3D','View 3D','Concrete,','CONCRETO',
                    'Concrete','Steel','Acero','Material','Paint','Glass','Vidrio',
                    'RenderMaterialProxy','RevitMaterial'];
+  const EXCLUIR_LISTA = ['Parts - Part','Elemento','none','Base'];
   const filtered = getFiltered().filter(el => {
     if (!el.nombre || el.nombre.length < 2) return false;
     if (/^[0-9A-F]{20,}$/i.test(el.nombre)) return false;
     if (el.nombre.startsWith('{') || el.nombre.startsWith('[')) return false;
     if (EXCLUIR.some(x => el.nombre.startsWith(x))) return false;
-    // Solo incluir si tiene nivel o si es un tipo Revit reconocible
-    if (el.nivel === '—' && !el.codigo && !el.lpsIFC) return false;
+    if (EXCLUIR_LISTA.includes(el.nombre)) return false;
     return true;
   });
 
