@@ -217,6 +217,12 @@ async function initViewer() {
     if (!hit) return false;
     const raw = hit?.node?.model?.raw || hit?.object?.node?.model?.raw || hit?.raw || hit;
     const id  = raw?.applicationId || raw?.id || '';
+    // Debug: ver estructura del hit
+    console.log('HIT:', JSON.stringify({
+      id, 
+      type: raw?.type || raw?.speckle_type,
+      keys: Object.keys(raw||{}).slice(0,8)
+    }));
     if (id && id.length > 2) { openPanel(id, raw); return true; }
     return false;
   }
@@ -410,22 +416,36 @@ async function extractElements(sist) {
 
 /* COLOREADO */
 async function applyColors() {
-  const lpsIds   = S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id);
-  const noLpsIds = S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id);
-  const ifcOnlyIds = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).map(e => e.id);
+  const lpsIds     = S.elements.filter(e => S.lps[e.id]).map(e => e.id);
+  const ifcIds     = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).map(e => e.id);
+  const noLpsIds   = S.elements.filter(e => !S.lps[e.id] && !e.lpsIFC).map(e => e.id);
+
+  // Log para debug
+  console.log('applyColors:', lpsIds.length, 'guardados,', ifcIds.length, 'IFC,', noLpsIds.length, 'sin LPS');
+  console.log('S.filter:', typeof S.filter, Object.keys(S.filter||{}).slice(0,10));
+
   try {
-    await S.filter.resetFilters();
-    await S.filter.setUserObjectColors([
-      ...(lpsIds.length     ? [{ objectIds: lpsIds,     color: '#10b981' }] : []),
-      ...(ifcOnlyIds.length ? [{ objectIds: ifcOnlyIds, color: '#f59e0b' }] : []),
-      ...(noLpsIds.length   ? [{ objectIds: noLpsIds,   color: '#4b5563' }] : []),
-    ]);
+    // Intentar todos los métodos posibles del FilteringExtension
+    const f = S.filter;
+    if (typeof f?.setUserObjectColors === 'function') {
+      await f.resetFilters?.();
+      const groups = [];
+      if (lpsIds.length)   groups.push({ objectIds: lpsIds,   color: '#10b981' });
+      if (ifcIds.length)   groups.push({ objectIds: ifcIds,   color: '#f59e0b' });
+      if (noLpsIds.length) groups.push({ objectIds: noLpsIds, color: '#4b5563' });
+      console.log('llamando setUserObjectColors con', groups.length, 'grupos');
+      await f.setUserObjectColors(groups);
+      console.log('setUserObjectColors OK');
+    } else if (typeof f?.setColorFilter === 'function') {
+      await f.resetFilters?.();
+      console.log('usando setColorFilter');
+      if (lpsIds.length) await f.setColorFilter(lpsIds, '#10b981');
+    } else {
+      console.warn('No hay método de color disponible. Métodos del filter:',
+        Object.getOwnPropertyNames(Object.getPrototypeOf(f||{})));
+    }
   } catch(e) {
-    console.warn('setUserObjectColors error:', e.message);
-    try {
-      await S.filter.resetFilters();
-      if (lpsIds.length) S.filter.highlightObjects(lpsIds);
-    } catch(e2) { console.warn('highlightObjects:', e2.message); }
+    console.error('applyColors ERROR:', e.message);
   }
 }
 
