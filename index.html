@@ -102,7 +102,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
   <div class="sep"></div>
   <span id="stag">Selecciona un modelo</span>
   <div class="hr">
-    <button class="btn" onclick="resetView()" title="Vista inicial">⌂</button>
+    <button onclick="resetView()" title="Vista inicial" style="font-size:18px;padding:5px 12px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--tx);cursor:pointer;line-height:1">⌂</button>
     <button class="btn gn" onclick="exportCSV()">CSV → Dynamo</button>
   </div>
 </header>
@@ -414,13 +414,21 @@ async function applyColors() {
     await S.filter.resetFilters();
     const withLPS    = S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id);
     const withoutLPS = S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id);
-    const colorGroups = [];
-    if (withLPS.length)    colorGroups.push({ objectIds: withLPS,    color: '#10b981' });
-    if (withoutLPS.length) colorGroups.push({ objectIds: withoutLPS, color: '#374151' });
-    if (colorGroups.length) {
-      await S.filter.setUserObjectColors(colorGroups);
+
+    // Intentar setUserObjectColors (API v2)
+    if (typeof S.filter.setUserObjectColors === 'function') {
+      const groups = [];
+      if (withLPS.length)    groups.push({ objectIds: withLPS,    color: '#10b981' });
+      if (withoutLPS.length) groups.push({ objectIds: withoutLPS, color: '#374151' });
+      if (groups.length) await S.filter.setUserObjectColors(groups);
     }
-  } catch(e) { console.warn('applyColors:', e); }
+    // Fallback: colorar con highlight directo
+    else if (typeof S.filter.setColorFilter === 'function') {
+      if (withLPS.length) {
+        await S.filter.setColorFilter({ objectIds: withLPS, color: '#10b981' });
+      }
+    }
+  } catch(e) { console.warn('applyColors error:', e); }
 }
 
 /* SELECCIÓN */
@@ -631,11 +639,15 @@ window.commitNota  = window.commitNota;
 /* RESET VIEW */
 window.resetView = function() {
   if (!S.viewer) return;
-  try { S.viewer.zoom(); } catch(e) {
-    try { S.viewer.cameraHandler?.fitToObjects?.(); } catch(e2) {
-      // Intentar resetear la cámara directamente
-      const cam = S.viewer.getExtension?.(CameraController);
-      if (cam) cam.fitToObjects?.();
+  try {
+    // Método correcto en @speckle/viewer 2.x
+    S.viewer.zoom(undefined, 1.2, true);
+  } catch(e) {
+    try { S.viewer.setView({ zoom: true }); } catch(e2) {
+      try {
+        const ext = S.viewer.getExtension(CameraController);
+        ext?.setCameraView([], true);
+      } catch(e3) { console.warn('resetView:', e3); }
     }
   }
 };
