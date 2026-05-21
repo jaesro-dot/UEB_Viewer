@@ -102,6 +102,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
   <div class="sep"></div>
   <span id="stag">Selecciona un modelo</span>
   <div class="hr">
+    <span id="color-status" style="font-family:var(--mono);font-size:10px;color:var(--mu);display:none"></span>
     <button onclick="resetView()" title="Vista inicial" style="font-size:18px;padding:5px 12px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--tx);cursor:pointer;line-height:1">⌂</button>
     <button class="btn gn" onclick="exportCSV()">CSV → Dynamo</button>
   </div>
@@ -416,36 +417,33 @@ async function extractElements(sist) {
 
 /* COLOREADO */
 async function applyColors() {
+  window._speckleFilter = S.filter; // exponer para debug desde consola
   const lpsIds     = S.elements.filter(e => S.lps[e.id]).map(e => e.id);
   const ifcIds     = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).map(e => e.id);
   const noLpsIds   = S.elements.filter(e => !S.lps[e.id] && !e.lpsIFC).map(e => e.id);
-
-  // Log para debug
-  console.log('applyColors:', lpsIds.length, 'guardados,', ifcIds.length, 'IFC,', noLpsIds.length, 'sin LPS');
-  console.log('S.filter:', typeof S.filter, Object.keys(S.filter||{}).slice(0,10));
+  const st = document.getElementById('color-status');
+  if(st) { st.style.display='inline'; st.style.color='var(--ac)'; }
 
   try {
-    // Intentar todos los métodos posibles del FilteringExtension
     const f = S.filter;
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(f||{}));
+    console.log('FilteringExtension métodos:', methods);
+    if(st) st.textContent = 'métodos: '+methods.slice(0,5).join(',');
+
     if (typeof f?.setUserObjectColors === 'function') {
       await f.resetFilters?.();
       const groups = [];
       if (lpsIds.length)   groups.push({ objectIds: lpsIds,   color: '#10b981' });
       if (ifcIds.length)   groups.push({ objectIds: ifcIds,   color: '#f59e0b' });
       if (noLpsIds.length) groups.push({ objectIds: noLpsIds, color: '#4b5563' });
-      console.log('llamando setUserObjectColors con', groups.length, 'grupos');
       await f.setUserObjectColors(groups);
-      console.log('setUserObjectColors OK');
-    } else if (typeof f?.setColorFilter === 'function') {
-      await f.resetFilters?.();
-      console.log('usando setColorFilter');
-      if (lpsIds.length) await f.setColorFilter(lpsIds, '#10b981');
+      if(st) { st.textContent='✓ Coloreado OK'; st.style.color='var(--ej)'; }
     } else {
-      console.warn('No hay método de color disponible. Métodos del filter:',
-        Object.getOwnPropertyNames(Object.getPrototypeOf(f||{})));
+      if(st) st.textContent = 'setUserObjectColors no existe: '+methods.join(',');
     }
   } catch(e) {
-    console.error('applyColors ERROR:', e.message);
+    console.error('applyColors:', e);
+    if(st) { st.textContent='ERROR: '+e.message; st.style.color='var(--pe)'; }
   }
 }
 
