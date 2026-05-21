@@ -134,7 +134,8 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
         <div><div class="flbl">Sistema</div><select class="fsel" id="fs" onchange="applyFilters()"><option value="">Todos</option></select></div>
       </div>
       <div class="leg">
-        <div class="lr"><div class="ld" style="background:var(--ej)"></div><span>Con LPS</span><span class="lc" id="cc">0</span></div>
+        <div class="lr"><div class="ld" style="background:var(--ej)"></div><span>Guardado</span><span class="lc" id="cc">0</span></div>
+        <div class="lr"><div class="ld" style="background:var(--pe)"></div><span>Del IFC (sin editar)</span><span class="lc" id="ci">0</span></div>
         <div class="lr"><div class="ld" style="background:var(--c4)"></div><span>Sin LPS</span><span class="lc" id="cs">0</span></div>
       </div>
       <div id="ep" style="display:none">
@@ -149,7 +150,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
               onkeydown="if(event.key==='Enter')this.blur()"
               onblur="commitLPS()">
           </div>
-          <div class="hint" style="margin-top:3px">Al salir del campo → se pinta en el visor</div>
+          <div class="hint" id="lps-hint" style="margin-top:3px">Al salir del campo o al guardar → se pinta en el visor</div>
         </div>
         <div>
           <div class="flbl" style="margin-bottom:4px">Nota</div>
@@ -409,63 +410,23 @@ async function extractElements(sist) {
 
 /* COLOREADO */
 async function applyColors() {
-  const lpsSet = new Set(S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id));
-  const noLpsSet = new Set(S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id));
-
-  // Método 1: FilteringExtension.setUserObjectColors
+  const lpsIds   = S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id);
+  const noLpsIds = S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id);
+  const ifcOnlyIds = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).map(e => e.id);
   try {
-    if (S.filter && typeof S.filter.setUserObjectColors === 'function') {
+    await S.filter.resetFilters();
+    await S.filter.setUserObjectColors([
+      ...(lpsIds.length     ? [{ objectIds: lpsIds,     color: '#10b981' }] : []),
+      ...(ifcOnlyIds.length ? [{ objectIds: ifcOnlyIds, color: '#f59e0b' }] : []),
+      ...(noLpsIds.length   ? [{ objectIds: noLpsIds,   color: '#4b5563' }] : []),
+    ]);
+  } catch(e) {
+    console.warn('setUserObjectColors error:', e.message);
+    try {
       await S.filter.resetFilters();
-      const groups = [];
-      if (lpsSet.size)   groups.push({ objectIds:[...lpsSet],   color:'#10b981' });
-      if (noLpsSet.size) groups.push({ objectIds:[...noLpsSet], color:'#374151' });
-      if (groups.length) {
-        await S.filter.setUserObjectColors(groups);
-        return;
-      }
-    }
-  } catch(e) { console.warn('setUserObjectColors:', e.message); }
-
-  // Método 2: Batch rendering del viewer
-  try {
-    const renderer = S.viewer.getRenderer?.();
-    if (renderer) {
-      lpsSet.forEach(id => {
-        renderer.setObjectsColorFilter?.([id], new renderer.THREE?.Color(0x10b981));
-      });
-      return;
-    }
-  } catch(e) {}
-
-  // Método 3: Acceder a los meshes via SpeckleRenderer
-  try {
-    const tree = S.viewer.getWorldTree();
-    tree.walk(node => {
-      const raw = node?.model?.raw;
-      if (!raw) return true;
-      const id = raw.applicationId || raw.id || '';
-      if (!id) return true;
-      const hasLPS = lpsSet.has(id);
-      // Buscar renderViews en el nodo
-      const rv = node.model?.renderViews;
-      if (!rv?.length) return true;
-      rv.forEach(v => {
-        try {
-          // Acceder al batch mesh
-          const mesh = v.batchObject?.batch?.mesh || v.renderObject;
-          if (!mesh) return;
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          mats.forEach(m => {
-            if (m?.color?.setHex) {
-              m.color.setHex(hasLPS ? 0x10b981 : 0x374151);
-              m.needsUpdate = true;
-            }
-          });
-        } catch(err) {}
-      });
-      return true;
-    });
-  } catch(e3) { console.warn('applyColors m3:', e3.message); }
+      if (lpsIds.length) S.filter.highlightObjects(lpsIds);
+    } catch(e2) { console.warn('highlightObjects:', e2.message); }
+  }
 }
 
 /* SELECCIÓN */
@@ -577,9 +538,12 @@ function updateFilters() {
 function updateUI() { updateFilters(); renderElems(); renderRegs(); renderSum(); updCounts(); }
 
 function updCounts() {
-  const c = S.elements.filter(e => S.lps[e.id] || e.tieneColor).length;
-  document.getElementById('cc').textContent = c;
-  document.getElementById('cs').textContent = S.elements.length - c;
+  const guardados = S.elements.filter(e => S.lps[e.id]).length;
+  const delIFC    = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).length;
+  const sinLPS    = S.elements.length - guardados - delIFC;
+  document.getElementById('cc').textContent = guardados;
+  document.getElementById('ci').textContent = delIFC;
+  document.getElementById('cs').textContent = sinLPS;
 }
 
 function renderElems() {
@@ -600,15 +564,17 @@ function renderElems() {
   });
 
   filtered.forEach(el => {
-    const lps = S.lps[el.id] || el.lpsIFC || '';
-    const has = !!(S.lps[el.id] || el.tieneColor);
+    const lps      = S.lps[el.id] || el.lpsIFC || '';
+    const guardado = !!S.lps[el.id];           // verde  — guardado por usuario
+    const delIFC   = !S.lps[el.id] && !!el.lpsIFC; // naranja — solo del IFC
+    const color    = guardado ? 'var(--ej)' : delIFC ? 'var(--pe)' : 'var(--c4)';
     const d = document.createElement('div');
     d.className = 'ei' + (el.id === S.selId ? ' sl' : '');
     d.dataset.id = el.id;
-    d.innerHTML = `<div class="edot" style="background:${has?'var(--ej)':'var(--c4)'}"></div>
+    d.innerHTML = `<div class="edot" style="background:${color}"></div>
       <div style="flex:1;min-width:0"><div class="en" title="${el.nombre}">${el.nombre}</div>
       <div class="em"><span>${el.nivel}</span><span>${el.sist}</span></div></div>
-      <div class="ev" style="color:${has?'var(--ej)':'var(--mu)'}">${lps||'—'}</div>`;
+      <div class="ev" style="color:${color}">${lps||'—'}</div>`;
     d.onclick = () => openPanel(el.id, null);
     list.appendChild(d);
   });
