@@ -188,6 +188,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
          CameraController, SelectionExtension, FilteringExtension,
          ViewerEvent } from '@speckle/viewer';
+import * as THREE from 'https://esm.sh/three@0.133.0';
 
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
@@ -409,26 +410,46 @@ async function extractElements(sist) {
 
 /* COLOREADO */
 async function applyColors() {
-  if (!S.filter) return;
   try {
-    await S.filter.resetFilters();
-    const withLPS    = S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id);
-    const withoutLPS = S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id);
-
-    // Intentar setUserObjectColors (API v2)
-    if (typeof S.filter.setUserObjectColors === 'function') {
+    // Colorear via FilteringExtension si está disponible
+    if (S.filter && typeof S.filter.setUserObjectColors === 'function') {
+      const withLPS    = S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id);
+      const withoutLPS = S.elements.filter(e => !S.lps[e.id] && !e.tieneColor).map(e => e.id);
+      await S.filter.resetFilters();
       const groups = [];
       if (withLPS.length)    groups.push({ objectIds: withLPS,    color: '#10b981' });
       if (withoutLPS.length) groups.push({ objectIds: withoutLPS, color: '#374151' });
-      if (groups.length) await S.filter.setUserObjectColors(groups);
+      if (groups.length) { await S.filter.setUserObjectColors(groups); return; }
     }
-    // Fallback: colorar con highlight directo
-    else if (typeof S.filter.setColorFilter === 'function') {
-      if (withLPS.length) {
-        await S.filter.setColorFilter({ objectIds: withLPS, color: '#10b981' });
-      }
-    }
-  } catch(e) { console.warn('applyColors error:', e); }
+  } catch(e) {}
+
+  // Fallback: colorear directamente en el WorldTree via Three.js
+  try {
+    const tree = S.viewer.getWorldTree();
+    const greenColor  = new THREE.Color(0x10b981);
+    const defaultColor = new THREE.Color(0x9ca3af);
+    const lpsSet = new Set(S.elements.filter(e => S.lps[e.id] || e.tieneColor).map(e => e.id));
+
+    tree.walk(node => {
+      const raw = node.model?.raw;
+      if (!raw) return true;
+      const id = raw.applicationId || raw.id || '';
+      if (!id) return true;
+      // Aplicar color a todos los renderViews del nodo
+      const rvs = node.model?.renderViews || [];
+      rvs.forEach(rv => {
+        if (rv.batchObject?.batch?.mesh?.material) {
+          const mat = rv.batchObject.batch.mesh.material;
+          if (Array.isArray(mat)) {
+            mat.forEach(m => m.color?.copy(lpsSet.has(id) ? greenColor : defaultColor));
+          } else if (mat.color) {
+            mat.color.copy(lpsSet.has(id) ? greenColor : defaultColor);
+          }
+        }
+      });
+      return true;
+    });
+  } catch(e2) { console.warn('applyColors fallback:', e2); }
 }
 
 /* SELECCIÓN */
@@ -485,10 +506,27 @@ window.guardarLPS = async function() {
   setTimeout(() => { btn.textContent = orig; btn.style.background = 'var(--ej)'; }, 1500);
 };
 
+function saveToStorage() {
+  try {
+    localStorage.setItem('lps_ueb003', JSON.stringify(S.lps));
+    localStorage.setItem('nota_ueb003', JSON.stringify(S.nota));
+  } catch(e) {}
+}
+
+function loadFromStorage() {
+  try {
+    const lps  = localStorage.getItem('lps_ueb003');
+    const nota = localStorage.getItem('nota_ueb003');
+    if (lps)  S.lps  = JSON.parse(lps);
+    if (nota) S.nota = JSON.parse(nota);
+  } catch(e) {}
+}
+
 window.commitLPS = async function() {
   const id = S.selId; if (!id) return;
   const raw = document.getElementById('lv').value.trim();
   if (raw) S.lps[id] = 'SEM' + raw; else delete S.lps[id];
+  saveToStorage();
   await applyColors();
   updateUI();
 };
@@ -497,6 +535,7 @@ window.commitNota = function() {
   const id = S.selId; if (!id) return;
   const v = document.getElementById('nv').value.trim();
   if (v) S.nota[id] = v; else delete S.nota[id];
+  saveToStorage();
 };
 
 /* FILTROS */
@@ -651,6 +690,9 @@ window.resetView = function() {
     }
   }
 };
+
+/* CARGAR DATOS GUARDADOS */
+loadFromStorage();
 
 /* ARRANCAR */
 await initViewer();
