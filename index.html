@@ -186,22 +186,10 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 </div>
 </div>
 
-<script>
-// Variables globales para el viewer
-let Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
-    CameraController, SelectionExtension, FilteringExtension, ViewerEvent;
-
-async function loadSpeckleModules() {
-  const m = await import('https://esm.sh/@speckle/viewer@2.19.5');
-  Viewer = m.Viewer;
-  DefaultViewerParams = m.DefaultViewerParams;
-  SpeckleLoader = m.SpeckleLoader;
-  UrlHelper = m.UrlHelper;
-  CameraController = m.CameraController;
-  SelectionExtension = m.SelectionExtension;
-  FilteringExtension = m.FilteringExtension;
-  ViewerEvent = m.ViewerEvent;
-}
+<script type="module">
+import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
+         CameraController, SelectionExtension, FilteringExtension,
+         ViewerEvent } from '@speckle/viewer';
 
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
@@ -216,7 +204,9 @@ const MODELS = [
 
 /* ESTADO */
 const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, selHitIds:[], active:null };
-window.S = S; // exponer para debug y acceso desde funciones window.*
+window.S = S; // exponer para debug
+// Exponer filter como propiedad que siempre lee el valor actual de S
+Object.defineProperty(window, '_filter', { get: () => S.filter });
 
 /* INIT VIEWER */
 async function initViewer() {
