@@ -157,6 +157,9 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.blur()}"
             onblur="commitNota()"></textarea>
         </div>
+        <button onclick="guardarLPS()" style="width:100%;padding:8px;border-radius:5px;border:none;background:var(--ej);color:#fff;font-family:var(--mono);font-size:12px;font-weight:500;cursor:pointer;transition:all .2s" id="btn-guardar">
+          ✓ Guardar y colorear
+        </button>
       </div>
       <div class="nos" id="nos"><div class="ico">🖱️</div><span>Toca un elemento en el visor</span></div>
       <div id="el"></div>
@@ -464,6 +467,16 @@ function openPanel(id, raw) {
 }
 
 /* LPS — auto-pinta al salir */
+window.guardarLPS = async function() {
+  await window.commitLPS();
+  await window.commitNota();
+  const btn = document.getElementById('btn-guardar');
+  const orig = btn.textContent;
+  btn.textContent = '✓ Guardado';
+  btn.style.background = '#059669';
+  setTimeout(() => { btn.textContent = orig; btn.style.background = 'var(--ej)'; }, 1500);
+};
+
 window.commitLPS = async function() {
   const id = S.selId; if (!id) return;
   const raw = document.getElementById('lv').value.trim();
@@ -618,7 +631,13 @@ window.commitNota  = window.commitNota;
 /* RESET VIEW */
 window.resetView = function() {
   if (!S.viewer) return;
-  S.viewer.zoom();
+  try { S.viewer.zoom(); } catch(e) {
+    try { S.viewer.cameraHandler?.fitToObjects?.(); } catch(e2) {
+      // Intentar resetear la cámara directamente
+      const cam = S.viewer.getExtension?.(CameraController);
+      if (cam) cam.fitToObjects?.();
+    }
+  }
 };
 
 /* ARRANCAR */
