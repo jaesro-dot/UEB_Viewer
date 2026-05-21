@@ -104,6 +104,8 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
   <div class="hr">
     <span id="color-status" style="font-family:var(--mono);font-size:10px;color:var(--mu);display:none"></span>
     <button onclick="resetView()" title="Vista inicial" style="font-size:18px;padding:5px 12px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--tx);cursor:pointer;line-height:1">⌂</button>
+    <button class="btn" onclick="exportJSON()" title="Exportar registros para transferir entre dispositivos">💾 Exportar</button>
+    <label class="btn" style="cursor:pointer" title="Importar registros desde otro dispositivo">📂 Importar<input type="file" accept=".json" onchange="importJSON(event)" style="display:none"></label>
     <button class="btn gn" onclick="exportCSV()">CSV → Dynamo</button>
   </div>
 </header>
@@ -701,7 +703,8 @@ window.exportCSV = function() {
   const csv = '\uFEFF' + ['GlobalId,Nombre,LPS,EJECUTADO,Nivel,Sistema,Codigo,Partida,Nota', ...rows].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
-  a.download = 'LPS_UEB003CED_' + new Date().toISOString().slice(0,10) + '.csv';
+  const sistCSV = S.active?.sist || 'GEN';
+  a.download = `LPS_UEB003CED_${sistCSV}_` + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
 };
 
@@ -739,6 +742,40 @@ window.commitLPS    = commitLPS;
 window.commitNota   = commitNota;
 window.loadModel    = loadModel;
 window.MODELS       = MODELS;
+
+window.exportJSON = function() {
+  const sist = S.active?.sist || 'GEN';
+  const data = { lps: S.lps, nota: S.nota, fecha: new Date().toISOString(), proyecto: 'UEB003-CED', disciplina: sist };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `LPS_UEB003CED_${sist}_` + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+window.importJSON = async function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data.lps) throw new Error('Archivo inválido — no contiene datos LPS');
+    // Merge con datos existentes (no sobreescribir)
+    const merged = {...S.lps, ...data.lps};
+    const mergedNota = {...S.nota, ...(data.nota||{})};
+    Object.assign(S.lps, merged);
+    Object.assign(S.nota, mergedNota);
+    saveToStorage();
+    await applyColors();
+    updateUI();
+    const total = Object.keys(data.lps).length;
+    alert(`✓ Importados ${total} registros LPS\nFecha del archivo: ${data.fecha?.slice(0,10)||'desconocida'}`);
+  } catch(e) {
+    alert('Error al importar: ' + e.message);
+  }
+  event.target.value = ''; // reset para poder reimportar
+};
 
 /* RESET VIEW */
 window.resetView = function() {
