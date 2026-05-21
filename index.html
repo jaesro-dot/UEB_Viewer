@@ -421,45 +421,20 @@ async function extractElements(sist) {
 /* COLOREADO */
 async function applyColors() {
   const st = document.getElementById('color-status');
-
-  // S.lps contiene nodeIds reales (guardados desde el HIT)
-  const lpsNodeIds  = Object.keys(S.lps);
-
-  // Del IFC: elementos con lpsIFC que contiene SEM (semana anterior)
-  // Sus nodeIds están en S.nodeIdMap (appId -> nodeId)
-  const ifcNodeIds  = [];
-  const noLpsNodeIds = [];
-
-  try {
-    S.viewer.getWorldTree().walk(node => {
-      const raw = node?.model?.raw;
-      if (!raw) return true;
-      const nId = node?.model?.id || '';
-      if (!nId) return true;
-      if (lpsNodeIds.includes(nId)) return true; // ya tiene LPS guardado
-      const appId = raw?.applicationId || raw?.id || '';
-      // Buscar en S.elements si tiene lpsIFC con SEM
-      const el = S.elements.find(e => e.id === appId || e.nodeId === nId);
-      if (el?.tieneColor) ifcNodeIds.push(nId);
-      else noLpsNodeIds.push(nId);
-      return true;
-    });
-  } catch(e) {}
-
-  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; 
-            st.textContent=`${lpsNodeIds.length} actual, ${ifcNodeIds.length} prev`; }
-
+  const lpsIds = Object.keys(S.lps); // todos los IDs guardados (nodeId + rawId)
+  if (st) { st.style.display='inline'; st.style.color='var(--ac)';
+            st.textContent=`coloreando ${lpsIds.length}...`; }
   try {
     const f = S.filter;
-    await f.resetFilters?.();
-    const groups = [];
-    // Verde brillante: LPS ingresado en esta sesión (semana actual)
-    if (lpsNodeIds.length)  groups.push({ objectIds: lpsNodeIds,  color: '#10b981' });
-    // Amarillo: tenía SEM en el IFC (semana anterior)
-    if (ifcNodeIds.length)  groups.push({ objectIds: ifcNodeIds,  color: '#f59e0b' });
-    // Gris: sin LPS
-    if (noLpsNodeIds.length) groups.push({ objectIds: noLpsNodeIds, color: '#374151' });
-    await f.setUserObjectColors(groups);
+    // NO llamar resetFilters antes — puede limpiar el estado
+    // Llamar directamente con solo los elementos con LPS
+    const result = await f.setUserObjectColors([
+      ...(lpsIds.length ? [{ objectIds: lpsIds, color: '#10b981' }] : [])
+    ]);
+    console.log('setUserObjectColors result:', result);
+    // Forzar re-render
+    try { S.viewer.requestRender?.(); } catch(e) {}
+    try { S.viewer.render?.(); } catch(e) {}
     if (st) { st.textContent='✓ Coloreado'; st.style.color='var(--ej)'; }
   } catch(e) {
     console.error('applyColors:', e);
