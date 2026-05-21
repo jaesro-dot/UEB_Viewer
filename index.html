@@ -417,33 +417,58 @@ async function extractElements(sist) {
 
 /* COLOREADO */
 async function applyColors() {
-  window._speckleFilter = S.filter; // exponer para debug desde consola
-  const lpsIds     = S.elements.filter(e => S.lps[e.id]).map(e => e.id);
-  const ifcIds     = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).map(e => e.id);
-  const noLpsIds   = S.elements.filter(e => !S.lps[e.id] && !e.lpsIFC).map(e => e.id);
+  window._speckleFilter = S.filter;
   const st = document.getElementById('color-status');
-  if(st) { st.style.display='inline'; st.style.color='var(--ac)'; }
+
+  // Recolectar todos los ids desde el WorldTree
+  // El viewer usa el 'id' interno del objeto, no el applicationId
+  const idMap = {}; // applicationId -> [speckleId, ...]
+  try {
+    S.viewer.getWorldTree().walk(node => {
+      const raw = node?.model?.raw;
+      if (!raw) return true;
+      const appId = raw.applicationId || '';
+      const intId = raw.id || '';
+      if (appId && intId) {
+        if (!idMap[appId]) idMap[appId] = new Set();
+        idMap[appId].add(intId);
+        idMap[appId].add(appId);
+      }
+      return true;
+    });
+  } catch(e) {}
+
+  function resolveIds(appIds) {
+    const out = new Set();
+    appIds.forEach(aid => {
+      if (idMap[aid]) idMap[aid].forEach(id => out.add(id));
+      else out.add(aid); // fallback
+    });
+    return [...out];
+  }
+
+  const lpsAppIds   = S.elements.filter(e => S.lps[e.id]).map(e => e.id);
+  const ifcAppIds   = S.elements.filter(e => !S.lps[e.id] && e.lpsIFC).map(e => e.id);
+  const noLpsAppIds = S.elements.filter(e => !S.lps[e.id] && !e.lpsIFC).map(e => e.id);
+
+  const lpsIds   = resolveIds(lpsAppIds);
+  const ifcIds   = resolveIds(ifcAppIds);
+  const noLpsIds = resolveIds(noLpsAppIds);
+
+  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; st.textContent=`coloreando ${lpsIds.length} elem...`; }
 
   try {
     const f = S.filter;
-    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(f||{}));
-    console.log('FilteringExtension métodos:', methods);
-    if(st) st.textContent = 'métodos: '+methods.slice(0,5).join(',');
-
-    if (typeof f?.setUserObjectColors === 'function') {
-      await f.resetFilters?.();
-      const groups = [];
-      if (lpsIds.length)   groups.push({ objectIds: lpsIds,   color: '#10b981' });
-      if (ifcIds.length)   groups.push({ objectIds: ifcIds,   color: '#f59e0b' });
-      if (noLpsIds.length) groups.push({ objectIds: noLpsIds, color: '#4b5563' });
-      await f.setUserObjectColors(groups);
-      if(st) { st.textContent='✓ Coloreado OK'; st.style.color='var(--ej)'; }
-    } else {
-      if(st) st.textContent = 'setUserObjectColors no existe: '+methods.join(',');
-    }
+    await f.resetFilters?.();
+    const groups = [];
+    if (lpsIds.length)   groups.push({ objectIds: lpsIds,   color: '#10b981' });
+    if (ifcIds.length)   groups.push({ objectIds: ifcIds,   color: '#f59e0b' });
+    if (noLpsIds.length) groups.push({ objectIds: noLpsIds, color: '#4b5563' });
+    await f.setUserObjectColors(groups);
+    if (st) { st.textContent='✓ Coloreado'; st.style.color='var(--ej)'; }
   } catch(e) {
     console.error('applyColors:', e);
-    if(st) { st.textContent='ERROR: '+e.message; st.style.color='var(--pe)'; }
+    if (st) { st.textContent='Error: '+e.message; st.style.color='var(--pe)'; }
   }
 }
 
@@ -525,6 +550,25 @@ window.commitLPS = async function() {
   await applyColors();
   updateUI();
 };
+
+// Obtener todos los speckleIds (ids internos) para un applicationId
+function getSpeckleIds(appId) {
+  const ids = [];
+  try {
+    S.viewer.getWorldTree().walk(node => {
+      const raw = node?.model?.raw;
+      if (!raw) return true;
+      const aid = raw.applicationId || raw.id || '';
+      if (aid === appId || raw.id === appId) {
+        // El id que Speckle usa internamente para coloreado
+        if (raw.id) ids.push(raw.id);
+        if (raw.applicationId && raw.applicationId !== raw.id) ids.push(raw.applicationId);
+      }
+      return true;
+    });
+  } catch(e) {}
+  return ids.length ? ids : [appId];
+}
 
 window.commitNota = function() {
   const id = S.selId; if (!id) return;
