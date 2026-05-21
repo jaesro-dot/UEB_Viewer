@@ -761,14 +761,9 @@ window.resetView = function() {
   }
 };
 
-/* MAIN - función principal */
-async function main() {
-  await loadSpeckleModules();
-  loadFromStorage();
-  await initViewer();
-}
-main();
-main().catch(console.error);
+/* ARRANCAR */
+loadFromStorage();
+await initViewer();
 </script>
 </body>
 </html>
