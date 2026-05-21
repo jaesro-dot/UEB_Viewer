@@ -203,7 +203,7 @@ const MODELS = [
 ];
 
 /* ESTADO */
-const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, active:null };
+const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, selHitIds:[], active:null };
 
 /* INIT VIEWER */
 async function initViewer() {
@@ -218,12 +218,13 @@ async function initViewer() {
     if (!hit) return false;
     const node = hit?.node || hit?.object?.node || hit;
     const raw  = node?.model?.raw || hit?.raw || hit;
-    // El nodeId es lo que setUserObjectColors necesita
     const nodeId = node?.model?.id || node?.id || '';
     const rawId  = raw?.applicationId || raw?.id || '';
     const id = rawId || nodeId;
-    console.log('HIT:', {rawId, nodeId, type: raw?.type||raw?.speckle_type});
-    if (id && id.length > 2) { openPanel(id, raw, nodeId); return true; }
+    // Guardar TODOS los IDs posibles para usarlos en coloreado
+    const allIds = [...new Set([rawId, nodeId, raw?.id, raw?.applicationId].filter(Boolean))];
+    console.log('HIT ids:', allIds, 'type:', raw?.type);
+    if (id && id.length > 2) { openPanel(id, raw, allIds); return true; }
     return false;
   }
 
@@ -417,28 +418,38 @@ async function extractElements(sist) {
 
 /* COLOREADO */
 async function applyColors() {
-  window._speckleFilter = S.filter;
   const st = document.getElementById('color-status');
+  
+  // Todos los IDs guardados en S.lps (incluye applicationId y nodeId)
+  const lpsAllIds = Object.keys(S.lps);
+  
+  // Para los sin LPS, recoger ids de elementos del árbol que NO estén en lpsAllIds
+  const noLpsIds = [];
+  try {
+    S.viewer.getWorldTree().walk(node => {
+      const raw = node?.model?.raw;
+      if (!raw) return true;
+      const nId = node?.model?.id || '';
+      const aId = raw?.applicationId || raw?.id || '';
+      if (!lpsAllIds.includes(nId) && !lpsAllIds.includes(aId)) {
+        if (nId) noLpsIds.push(nId);
+      }
+      return true;
+    });
+  } catch(e) {}
 
-  // Usar nodeId cuando está disponible, fallback a id
-  const lpsIds   = S.elements.filter(e => S.lps[e.id]||S.lps[e.nodeId]).map(e => e.nodeId||e.id);
-  const ifcIds   = S.elements.filter(e => !S.lps[e.id]&&!S.lps[e.nodeId]&&e.lpsIFC).map(e => e.nodeId||e.id);
-  const noLpsIds = S.elements.filter(e => !S.lps[e.id]&&!S.lps[e.nodeId]&&!e.lpsIFC).map(e => e.nodeId||e.id);
-
-  // También incluir el selNodeId actual si acaba de guardarse
-  if (S.selNodeId && S.lps[S.selId] && !lpsIds.includes(S.selNodeId)) lpsIds.push(S.selNodeId);
-
-  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; st.textContent=`${lpsIds.length} guardados`; }
+  console.log('applyColors: lpsIds:', lpsAllIds.length, 'noLps:', noLpsIds.length);
+  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; st.textContent=`${lpsAllIds.length} con LPS`; }
 
   try {
     const f = S.filter;
     await f.resetFilters?.();
     const groups = [];
-    if (lpsIds.length)   groups.push({ objectIds: lpsIds,   color: '#10b981' });
-    if (ifcIds.length)   groups.push({ objectIds: ifcIds,   color: '#f59e0b' });
-    if (noLpsIds.length) groups.push({ objectIds: noLpsIds, color: '#4b5563' });
+    if (lpsAllIds.length) groups.push({ objectIds: lpsAllIds, color: '#10b981' });
+    if (noLpsIds.length)  groups.push({ objectIds: noLpsIds,  color: '#4b5563' });
     await f.setUserObjectColors(groups);
     if (st) { st.textContent='✓ Coloreado'; st.style.color='var(--ej)'; }
+    console.log('setUserObjectColors OK con ids:', lpsAllIds.slice(0,3));
   } catch(e) {
     console.error('applyColors:', e);
     if (st) { st.textContent='Error: '+e.message; st.style.color='var(--pe)'; }
@@ -458,8 +469,10 @@ function desel() {
   document.querySelectorAll('.ei').forEach(i => i.classList.remove('sl'));
 }
 
-function openPanel(id, raw, nodeId) {
-  S.selNodeId = nodeId || id; // ID interno del nodo para coloreado
+function openPanel(id, raw, hitIds) {
+  // hitIds puede ser array de IDs o un string
+  S.selHitIds = Array.isArray(hitIds) ? hitIds : [hitIds || id];
+  S.selNodeId = S.selHitIds[0] || id;
   S.selId = id;
   document.getElementById('nos').style.display = 'none';
   document.getElementById('ep').style.display  = 'flex';
@@ -518,15 +531,13 @@ function loadFromStorage() {
 
 window.commitLPS = async function() {
   const id = S.selId; if (!id) return;
-  const raw = document.getElementById('lv').value.trim();
-  if (raw) {
-    S.lps[id] = 'SEM' + raw;
-    // También indexar por nodeId si es diferente
-    if (S.selNodeId && S.selNodeId !== id) S.lps[S.selNodeId] = 'SEM' + raw;
-  } else {
-    delete S.lps[id];
-    if (S.selNodeId) delete S.lps[S.selNodeId];
-  }
+  const val = document.getElementById('lv').value.trim();
+  const lpsVal = val ? 'SEM' + val : null;
+  // Guardar bajo TODOS los IDs del elemento seleccionado
+  const ids = S.selHitIds?.length ? S.selHitIds : [id];
+  ids.forEach(i => { if (lpsVal) S.lps[i] = lpsVal; else delete S.lps[i]; });
+  // También guardar bajo id principal
+  if (lpsVal) S.lps[id] = lpsVal; else delete S.lps[id];
   saveToStorage();
   await applyColors();
   updateUI();
