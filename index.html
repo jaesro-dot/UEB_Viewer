@@ -110,10 +110,15 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 <div id="main">
   <div id="vw">
     <div id="sv"></div>
-    <div id="ld">
+    <!-- Spinner de carga (encima del visor) -->
+    <div id="ld" style="pointer-events:none;background:transparent">
       <div class="sp" id="sp" style="display:none"></div>
+      <div id="lmsg" style="font-family:var(--mono);font-size:12px;color:var(--mu)"></div>
+    </div>
+    <!-- Selector de modelos - se oculta al cargar uno -->
+    <div id="model-selector" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,16,.94);z-index:49">
       <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">LPS Visor · UEB003-CED</div>
-      <div id="lmsg">Selecciona el modelo a visualizar</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--mu)">Selecciona el modelo a visualizar</div>
       <div class="mbx" id="mbox"></div>
       <div class="ors">o pega una URL de Speckle</div>
       <div style="display:flex;gap:6px;width:100%;max-width:310px">
@@ -673,13 +678,18 @@ window.exportCSV = function() {
 
 /* LOADING */
 function setLd(on, msg='') {
+  const sp  = document.getElementById('sp');
+  const lmsg = document.getElementById('lmsg');
+  const sel = document.getElementById('model-selector');
   if (on) {
-    document.getElementById('ld').classList.remove('h');
-    document.getElementById('sp').style.display = 'block';
-    if (msg) document.getElementById('lmsg').textContent = msg;
+    if (sp) sp.style.display = 'block';
+    if (lmsg && msg) lmsg.textContent = msg;
+    // Ocultar selector al empezar a cargar
+    if (sel) sel.style.display = 'none';
   } else {
-    document.getElementById('ld').classList.add('h');
-    document.getElementById('sp').style.display = 'none';
+    if (sp) sp.style.display = 'none';
+    if (lmsg) lmsg.textContent = '';
+    // El selector NO vuelve — el visor ya está cargado
   }
 }
 
