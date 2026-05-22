@@ -626,7 +626,32 @@ function getFiltered() {
     (!s || e.sist === s)
   );
 }
-window.applyFilters = function() { renderElems(); };
+window.applyFilters = async function() {
+  renderElems();
+  // Aislar elementos del nivel/sistema seleccionado en el visor
+  const nivel = document.getElementById('fn').value;
+  const sist  = document.getElementById('fs').value;
+  if (!S.filter) return;
+  try {
+    if (!nivel && !sist) {
+      // Sin filtro — mostrar todo
+      await S.filter.resetFilters();
+      await applyColors();
+    } else {
+      // Aislar solo los elementos del nivel/sistema seleccionado
+      const filtered = S.elements.filter(e =>
+        (!nivel || e.nivel === nivel) && (!sist || e.sist === sist)
+      );
+      const ids = filtered.flatMap(e => [e.id, e.nodeId].filter(Boolean));
+      await S.filter.resetFilters();
+      if (ids.length) {
+        await S.filter.isolateObjects(ids);
+        // Reaplica colores después de aislar
+        await applyColors();
+      }
+    }
+  } catch(e) { console.warn('applyFilters visor:', e.message); }
+};
 
 function updateFilters() {
   const niv = [...new Set(S.elements.map(e=>e.nivel).filter(x=>x&&x!=='—'))].sort();
@@ -658,7 +683,7 @@ function renderElems() {
   const EXCLUIR = ['RenderMaterial','Vista 3D','View 3D','Concrete,','CONCRETO',
                    'Concrete','Steel','Acero','Material','Paint','Glass','Vidrio',
                    'RenderMaterialProxy','RevitMaterial'];
-  const EXCLUIR_LISTA = ['Parts - Part','Elemento','none','Base'];
+  const EXCLUIR_LISTA = ['Parts - Part','Elemento','none','Base','RevitObject'];
   const filtered = getFiltered().filter(el => {
     if (!el.nombre || el.nombre.length < 2) return false;
     if (/^[0-9A-F]{20,}$/i.test(el.nombre)) return false;
