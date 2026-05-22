@@ -157,6 +157,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
       <div id="ep" style="display:none">
         <div><div class="ep-l">Elemento</div><div class="ep-n" id="epn">—</div></div>
         <div class="ep-m" id="epm">—</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--mu);margin-top:-4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="ep-uid" title="UNIQUE_ID de Revit"></div>
         <div>
           <div class="flbl" style="margin-bottom:5px">Parámetro LPS</div>
           <div class="lw">
@@ -363,6 +364,8 @@ async function loadModel(modelDef) {
     // 3. Leer propiedades
     setLd(true, 'Leyendo propiedades...');
     await extractElements(modelDef.sist);
+    const _nivs=[...new Set(S.elements.map(e=>e.nivel))];
+    console.log('Niveles:',_nivs,'Ej:',S.elements[0]);
     updateUI();
     setLd(false);
     document.getElementById('stag').textContent = `${modelDef.label} · ${S.elements.length} elem.`;
@@ -420,37 +423,56 @@ async function extractElements(sist) {
     const params = raw.parameters || raw.Parameters || {};
     function gp(keys) {
       for (const k of keys) {
-        // Búsqueda directa por clave
+        const ku = k.toUpperCase();
+        // 1. Clave exacta
         if (params[k] !== undefined && params[k] !== null) {
           const v = params[k];
           if (v && typeof v === 'object' && 'value' in v) return String(v.value ?? '');
           if (typeof v !== 'object') return String(v);
         }
-        // Búsqueda por nombre dentro de cada parámetro
+        // 2. Clave case-insensitive
+        for (const pk of Object.keys(params)) {
+          if (pk.toUpperCase() === ku) {
+            const v = params[pk];
+            if (v && typeof v === 'object' && 'value' in v) return String(v.value ?? '');
+            if (typeof v !== 'object') return String(v);
+          }
+        }
+        // 3. Por propiedad name dentro del objeto
         for (const pk of Object.keys(params)) {
           const po = params[pk];
           if (po && typeof po === 'object') {
-            const pn = (po.name || po.Name || pk).toUpperCase();
-            if (pn === k.toUpperCase() && po.value !== undefined)
-              return String(po.value ?? '');
+            const pn = (po.name || po.Name || '').toUpperCase();
+            if (pn === ku && po.value !== undefined) return String(po.value ?? '');
           }
         }
       }
       return '';
     }
 
-    const nivel    = gp(['NIVEL','nivel','Level','level']) || raw.level?.name || raw.Level?.name || '—';
+    // Nivel desde parámetro Revit (nombre exacto: NIVEL) o level del objeto
+    const _lvlObj  = raw.level || raw.Level || raw['@level'];
+    const _lvlName = _lvlObj && typeof _lvlObj === 'object'
+                     ? (_lvlObj.name || _lvlObj.Name || '')
+                     : (typeof _lvlObj === 'string' ? _lvlObj : '');
+    const nivel    = gp(['NIVEL','Nivel','nivel','NIVEL_DE_PISO','Level','level','Story','PLANTA']) ||
+                     _lvlName || raw.levelName || raw.storey || '—';
     const sistEl   = gp(['SISTEMA','DISCIPLINA','sistema','disciplina']) || sist;
-    const lpsIFC   = gp(['LPS','lps']);
-    const ejecutado= gp(['EJECUTADO','ejecutado','Ejecutado']);
-    const codigo   = gp(['CODIGO','Codigo','CODE','code','Código']);
-    const partida  = gp(['PARTIDA','Partida','partida']);
+    const lpsIFC   = gp(['LPS','lps','Lps']);
+    const ejecutado= gp(['EJECUTADO','Ejecutado','ejecutado','EXECUTED']);
+    const codigo   = gp(['CÓDIGO','CODIGO','Codigo','CODE','code']);
+    const partida  = gp(['PARTIDA','Partida','partida','DESCRIPTION']);
+    const sector   = gp(['SECTOR','Sector','sector']);
+    const ejes     = gp(['EJES','Ejes','ejes','AXIS']);
+    // UNIQUE_ID de Revit — el ID real para Dynamo
+    const uniqueId = gp(['UNIQUE_ID','UniqueId','UNIQUEID','unique_id']) ||
+                     raw.applicationId || raw.id || id;
 
     // Tiene color previo si LPS del IFC contiene "SEM" (ejecutado en semana anterior)
     const tieneColor = (lpsIFC && lpsIFC.toUpperCase().includes('SEM'));
 
     const nodeId = node?.model?.id || id;
-    S.elements.push({ id, nodeId, nombre, nivel, sist:sistEl, lpsIFC, ejecutado, tieneColor, codigo, partida });
+    S.elements.push({ id, nodeId, nombre, nivel, sist:sistEl, lpsIFC, ejecutado, tieneColor, codigo, partida, sector, ejes, uniqueId });
     return true;
   });
 
@@ -507,7 +529,9 @@ function openPanel(id, raw, hitIds) {
   if (el) {
     document.getElementById('epn').textContent = el.nombre;
     document.getElementById('epm').textContent =
-      [el.nivel, el.sist, el.codigo].filter(x => x && x !== '—').join(' · ');
+      [el.nivel, el.codigo, el.ejes].filter(x => x && x !== '—').join(' · ');
+      const uidEl = document.getElementById('ep-uid');
+      if (uidEl) uidEl.textContent = el.uniqueId || el.id;
     const cur = S.lps[el.id] || el.lpsIFC || '';
     document.getElementById('lv').value = cur.startsWith('SEM') ? cur.slice(3) : cur;
     document.getElementById('nv').value = S.nota[el.id] || '';
@@ -597,7 +621,10 @@ window.commitNota = function() {
 function getFiltered() {
   const n = document.getElementById('fn').value;
   const s = document.getElementById('fs').value;
-  return S.elements.filter(e => (!n || e.nivel === n) && (!s || e.sist === s));
+  return S.elements.filter(e => 
+    (!n || e.nivel === n || (n === '—' && e.nivel === '—')) && 
+    (!s || e.sist === s)
+  );
 }
 window.applyFilters = function() { renderElems(); };
 
@@ -696,11 +723,29 @@ window.goTab = function(t) {
 /* EXPORT CSV */
 window.exportCSV = function() {
   if (!S.elements.length) { alert('Carga un modelo primero.'); return; }
-  const rows = S.elements.map(el => {
-    const lps = S.lps[el.id] || el.lpsIFC || '';
-    return [el.id, `"${el.nombre}"`, lps, lps?'.T.':'.F.', el.nivel, el.sist, el.codigo, `"${el.partida}"`, `"${S.nota[el.id]||''}"`].join(',');
+  // Solo exportar elementos que tienen LPS registrado (del visor o del IFC)
+  const conLPS = S.elements.filter(el => S.lps[el.id] || el.lpsIFC);
+  if (!conLPS.length) { alert('No hay elementos con LPS registrado.'); return; }
+  const rows = conLPS.map(el => {
+    const lps  = S.lps[el.id] || el.lpsIFC || '';
+    const uid  = el.uniqueId || el.id; // UNIQUE_ID de Revit para Dynamo
+    const nota = S.nota[el.id] || S.nota[Object.keys(S.nota).find(k => k.includes(el.id.slice(0,8)))||''] || '';
+    return [
+      `"${uid}"`,           // UNIQUE_ID de Revit
+      `"${el.nombre}"`,     // Nombre del elemento
+      lps,                  // SEM38, SEM40, etc.
+      lps ? '.T.' : '.F.',  // EJECUTADO
+      el.nivel,             // NIVEL
+      el.sist,              // Sistema
+      el.codigo,            // CÓDIGO
+      `"${el.partida}"`,    // PARTIDA
+      el.sector,            // SECTOR
+      el.ejes,              // EJES
+      `"${nota}"`,          // Nota del visor
+    ].join(',');
   });
-  const csv = '\uFEFF' + ['GlobalId,Nombre,LPS,EJECUTADO,Nivel,Sistema,Codigo,Partida,Nota', ...rows].join('\n');
+  const header = 'UNIQUE_ID,Nombre,LPS,EJECUTADO,Nivel,Sistema,Codigo,Partida,Sector,Ejes,Nota';
+  const csv = '\uFEFF' + [header, ...rows].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
   const sistCSV = S.active?.sist || 'GEN';
