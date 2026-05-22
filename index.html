@@ -219,7 +219,7 @@ const MODELS = [
 ];
 
 /* ESTADO */
-const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, selHitIds:[], active:null };
+const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, selHitIds:[], active:null, nodeMap:{} };
 window.S = S; // exponer para debug
 // Exponer filter como propiedad que siempre lee el valor actual de S
 Object.defineProperty(window, '_filter', { get: () => S.filter });
@@ -291,6 +291,11 @@ async function initViewer() {
 
   // Visor listo — habilitar botones y disparar evento
   document.querySelectorAll('#mbox .mbt').forEach(b => b.disabled = false);
+  // Log métodos disponibles para debug
+  const _fMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(S.filter||{}));
+  console.log('FilteringExtension métodos:', _fMethods);
+  const _vMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(S.viewer||{}));
+  console.log('Viewer métodos:', _vMethods.filter(m => m.includes('hide')||m.includes('show')||m.includes('ghost')||m.includes('isolat')||m.includes('filter')||m.includes('object')||m.includes('Object')));
   window.dispatchEvent(new CustomEvent('viewer-ready'));
   const selStatus = document.getElementById('sel-status');
   if (selStatus) selStatus.textContent = 'Selecciona el modelo a visualizar';
@@ -328,7 +333,7 @@ async function loadModel(modelDef) {
     const { server, proj, mdl } = parsed;
 
     await S.viewer.unloadAll();
-    S.elements = []; S.selId = null;
+    S.elements = []; S.selId = null; S.nodeMap = {};
 
     // 1. Obtener objectId via GraphQL (CORS abierto en /graphql para proyectos públicos)
     setLd(true, 'Obteniendo versión...');
@@ -473,6 +478,9 @@ async function extractElements(sist) {
 
     const nodeId = node?.model?.id || id;
     S.elements.push({ id, nodeId, nombre, nivel, sist:sistEl, lpsIFC, ejecutado, tieneColor, codigo, partida, sector, ejes, uniqueId });
+    // Guardar en mapa global para filtrado rápido
+    if (nodeId) S.nodeMap[nodeId] = { nivel, sist:sistEl };
+    if (id && id !== nodeId) S.nodeMap[id] = { nivel, sist:sistEl };
     return true;
   });
 
@@ -631,41 +639,28 @@ window.applyFilters = async function() {
   const nivel = document.getElementById('fn').value;
   const sist  = document.getElementById('fs').value;
   if (!S.filter) return;
+
   try {
     await S.filter.resetFilters();
-    if (!nivel && !sist) {
-      await applyColors();
-      return;
+    if (!nivel && !sist) { await applyColors(); return; }
+
+    // Usar nodeMap construido durante extractElements
+    const lpsVis=[], noLpsVis=[], ocultos=[];
+    for (const [nId, info] of Object.entries(S.nodeMap)) {
+      const match = (!nivel || info.nivel===nivel) && (!sist || info.sist===sist);
+      if (!match) { ocultos.push(nId); continue; }
+      const hasLps = S.lps[nId] || Object.keys(S.lps).some(k => k.includes(nId.slice(0,8)));
+      hasLps ? lpsVis.push(nId) : noLpsVis.push(nId);
     }
-    // Construir mapa de nodeIds desde el WorldTree con sus niveles
-    // ya que los nodeIds reales del viewer son los que funcionan
-    const visNodeIds = [];
-    const hidNodeIds = [];
-    S.viewer.getWorldTree().walk(node => {
-      const raw = node?.model?.raw;
-      if (!raw) return true;
-      const nId   = node?.model?.id || '';
-      const appId = raw?.applicationId || raw?.id || '';
-      if (!nId) return true;
-      // Buscar el elemento correspondiente
-      const el = S.elements.find(e => e.id === appId || e.nodeId === nId || e.id === nId);
-      if (!el) { hidNodeIds.push(nId); return true; }
-      const match = (!nivel || el.nivel === nivel) && (!sist || el.sist === sist);
-      if (match) visNodeIds.push(nId);
-      else hidNodeIds.push(nId);
-      return true;
-    });
+
+    console.log('Filtro:', nivel||'todos', sist||'todos',
+      '| vis:', lpsVis.length+noLpsVis.length, '| ocultos:', ocultos.length,
+      '| nodeMap size:', Object.keys(S.nodeMap).length);
 
     const groups = [];
-    if (hidNodeIds.length) groups.push({ objectIds: hidNodeIds, color: '#111318' }); // casi negro
-    // Visibles con LPS
-    const lpsVis = visNodeIds.filter(nId => {
-      const el = S.elements.find(e => e.nodeId === nId || e.id === nId);
-      return el && (S.lps[el.id] || S.lps[el.nodeId]);
-    });
-    const noLpsVis = visNodeIds.filter(nId => !lpsVis.includes(nId));
+    if (ocultos.length)  groups.push({ objectIds: ocultos,  color: '#0a0c10' });
     if (lpsVis.length)   groups.push({ objectIds: lpsVis,   color: '#10b981' });
-    if (noLpsVis.length) groups.push({ objectIds: noLpsVis, color: '#6b7280' });
+    if (noLpsVis.length) groups.push({ objectIds: noLpsVis, color: '#9ca3af' });
     if (groups.length) {
       await S.filter.setUserObjectColors(groups);
       try { S.viewer.requestRender(); } catch(e) {}
