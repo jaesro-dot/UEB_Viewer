@@ -628,29 +628,36 @@ function getFiltered() {
 }
 window.applyFilters = async function() {
   renderElems();
-  // Aislar elementos del nivel/sistema seleccionado en el visor
   const nivel = document.getElementById('fn').value;
   const sist  = document.getElementById('fs').value;
   if (!S.filter) return;
   try {
+    await S.filter.resetFilters();
     if (!nivel && !sist) {
-      // Sin filtro — mostrar todo
-      await S.filter.resetFilters();
+      // Sin filtro — restaurar colores LPS
       await applyColors();
     } else {
-      // Aislar solo los elementos del nivel/sistema seleccionado
-      const filtered = S.elements.filter(e =>
-        (!nivel || e.nivel === nivel) && (!sist || e.sist === sist)
-      );
-      const ids = filtered.flatMap(e => [e.id, e.nodeId].filter(Boolean));
-      await S.filter.resetFilters();
-      if (ids.length) {
-        await S.filter.isolateObjects(ids);
-        // Reaplica colores después de aislar
-        await applyColors();
-      }
+      // Obtener IDs de elementos visibles y ocultos
+      const visible  = S.elements.filter(e => (!nivel || e.nivel === nivel) && (!sist || e.sist === sist));
+      const ocultos  = S.elements.filter(e => !visible.includes(e));
+      const visIds   = visible.flatMap(e => [e.id, e.nodeId].filter(Boolean));
+      const ocultIds = ocultos.flatMap(e => [e.id, e.nodeId].filter(Boolean));
+
+      // Colorear: ocultos en transparente/invisible, visibles con sus colores
+      const groups = [];
+      // Elementos ocultos — gris muy oscuro casi invisible
+      if (ocultIds.length) groups.push({ objectIds: ocultIds, color: '#1a1d24' });
+      // Elementos visibles con LPS — verde
+      const lpsIds = visible.filter(e => S.lps[e.id] || S.lps[e.nodeId]).flatMap(e => [e.id, e.nodeId].filter(Boolean));
+      if (lpsIds.length) groups.push({ objectIds: lpsIds, color: '#10b981' });
+      // Elementos visibles sin LPS — gris normal
+      const noLpsIds = visible.filter(e => !S.lps[e.id] && !S.lps[e.nodeId]).flatMap(e => [e.id, e.nodeId].filter(Boolean));
+      if (noLpsIds.length) groups.push({ objectIds: noLpsIds, color: '#6b7280' });
+
+      if (groups.length) await S.filter.setUserObjectColors(groups);
+      try { S.viewer.requestRender(); } catch(e) {}
     }
-  } catch(e) { console.warn('applyFilters visor:', e.message); }
+  } catch(e) { console.warn('applyFilters:', e.message); }
 };
 
 function updateFilters() {
