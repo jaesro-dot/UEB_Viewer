@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>LPS Visor · UEB003-CED</title>
+<title>Control_AR · UEB003-CED</title>
 <script type="importmap">{"imports":{"@speckle/viewer":"https://esm.sh/@speckle/viewer@2.19.5"}}</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
@@ -98,7 +98,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 <body>
 <div id="app">
 <header>
-  <span class="logo">LPS · VISOR</span>
+  <span class="logo">Control_AR</span>
   <div class="sep"></div>
   <span id="stag">Selecciona un modelo</span>
   <div class="hr">
@@ -119,7 +119,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
     </div>
     <!-- Selector de modelos - se oculta al cargar uno -->
     <div id="model-selector" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,16,.94);z-index:49">
-      <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">LPS Visor · UEB003-CED</div>
+      <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">Control_AR · UEB003-CED</div>
       <div id="sel-status" style="font-family:var(--mono);font-size:11px;color:var(--mu)">Iniciando visor...</div>
       <div class="mbx" id="mbox">
         <button class="mbt" disabled onclick="loadModel(MODELS[0])"><span class="mi">📐</span><span><span class="ml">EST — Estructural</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
@@ -492,16 +492,34 @@ async function extractElements(sist) {
 async function applyColors() {
   const st = document.getElementById('color-status');
   const lpsIds = [...new Set(Object.keys(S.lps))];
-  
-  if (st) { st.style.display='inline'; st.style.color='var(--ac)';
-            st.textContent=`coloreando...`; }
+  const nivel  = document.getElementById('fn')?.value || '';
+  const sist   = document.getElementById('fs')?.value || '';
+
+  if (st) { st.style.display='inline'; st.style.color='var(--ac)'; st.textContent='coloreando...'; }
   try {
     const f = S.filter;
     await f.resetFilters();
-    const groups = [];
-    if (lpsIds.length) groups.push({ objectIds: lpsIds, color: '#10b981' });
-    if (groups.length) await f.setUserObjectColors(groups);
-    // Forzar render inmediato
+
+    if (!nivel && !sist) {
+      // Sin filtro — solo pintar LPS
+      const groups = [];
+      if (lpsIds.length) groups.push({ objectIds: lpsIds, color: '#10b981' });
+      if (groups.length) await f.setUserObjectColors(groups);
+    } else {
+      // Con filtro activo — respetar aislamiento de nivel/sistema
+      const lpsVis=[], noLpsVis=[], ocultos=[];
+      for (const [nId, info] of Object.entries(S.nodeMap)) {
+        const match = (!nivel||info.nivel===nivel) && (!sist||info.sist===sist);
+        if (!match) { ocultos.push(nId); continue; }
+        const hasLps = lpsIds.includes(nId) || lpsIds.some(k=>k.includes(nId.slice(0,8)));
+        hasLps ? lpsVis.push(nId) : noLpsVis.push(nId);
+      }
+      const groups = [];
+      if (ocultos.length)  groups.push({ objectIds: ocultos,  color: '#0a0c10' });
+      if (lpsVis.length)   groups.push({ objectIds: lpsVis,   color: '#10b981' });
+      if (noLpsVis.length) groups.push({ objectIds: noLpsVis, color: '#9ca3af' });
+      if (groups.length) await f.setUserObjectColors(groups);
+    }
     try { S.viewer.requestRender(); } catch(e) {}
     if (st) { st.textContent='✓ '+lpsIds.length+' guardados'; st.style.color='var(--ej)'; }
   } catch(e) {
@@ -594,8 +612,8 @@ window.commitLPS = async function() {
   if (lpsVal) S.lps[id] = lpsVal; else delete S.lps[id];
   saveToStorage();
   await applyColors();
-  // Segundo render tras breve delay para asegurar visibilidad inmediata
-  setTimeout(() => applyColors(), 150);
+  // Segundo render para asegurar visibilidad inmediata
+  setTimeout(applyColors, 150);
   updateUI();
 };
 
