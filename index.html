@@ -634,27 +634,40 @@ window.applyFilters = async function() {
   try {
     await S.filter.resetFilters();
     if (!nivel && !sist) {
-      // Sin filtro — restaurar colores LPS
       await applyColors();
-    } else {
-      // Obtener IDs de elementos visibles y ocultos
-      const visible  = S.elements.filter(e => (!nivel || e.nivel === nivel) && (!sist || e.sist === sist));
-      const ocultos  = S.elements.filter(e => !visible.includes(e));
-      const visIds   = visible.flatMap(e => [e.id, e.nodeId].filter(Boolean));
-      const ocultIds = ocultos.flatMap(e => [e.id, e.nodeId].filter(Boolean));
+      return;
+    }
+    // Construir mapa de nodeIds desde el WorldTree con sus niveles
+    // ya que los nodeIds reales del viewer son los que funcionan
+    const visNodeIds = [];
+    const hidNodeIds = [];
+    S.viewer.getWorldTree().walk(node => {
+      const raw = node?.model?.raw;
+      if (!raw) return true;
+      const nId   = node?.model?.id || '';
+      const appId = raw?.applicationId || raw?.id || '';
+      if (!nId) return true;
+      // Buscar el elemento correspondiente
+      const el = S.elements.find(e => e.id === appId || e.nodeId === nId || e.id === nId);
+      if (!el) { hidNodeIds.push(nId); return true; }
+      const match = (!nivel || el.nivel === nivel) && (!sist || el.sist === sist);
+      if (match) visNodeIds.push(nId);
+      else hidNodeIds.push(nId);
+      return true;
+    });
 
-      // Colorear: ocultos en transparente/invisible, visibles con sus colores
-      const groups = [];
-      // Elementos ocultos — gris muy oscuro casi invisible
-      if (ocultIds.length) groups.push({ objectIds: ocultIds, color: '#1a1d24' });
-      // Elementos visibles con LPS — verde
-      const lpsIds = visible.filter(e => S.lps[e.id] || S.lps[e.nodeId]).flatMap(e => [e.id, e.nodeId].filter(Boolean));
-      if (lpsIds.length) groups.push({ objectIds: lpsIds, color: '#10b981' });
-      // Elementos visibles sin LPS — gris normal
-      const noLpsIds = visible.filter(e => !S.lps[e.id] && !S.lps[e.nodeId]).flatMap(e => [e.id, e.nodeId].filter(Boolean));
-      if (noLpsIds.length) groups.push({ objectIds: noLpsIds, color: '#6b7280' });
-
-      if (groups.length) await S.filter.setUserObjectColors(groups);
+    const groups = [];
+    if (hidNodeIds.length) groups.push({ objectIds: hidNodeIds, color: '#111318' }); // casi negro
+    // Visibles con LPS
+    const lpsVis = visNodeIds.filter(nId => {
+      const el = S.elements.find(e => e.nodeId === nId || e.id === nId);
+      return el && (S.lps[el.id] || S.lps[el.nodeId]);
+    });
+    const noLpsVis = visNodeIds.filter(nId => !lpsVis.includes(nId));
+    if (lpsVis.length)   groups.push({ objectIds: lpsVis,   color: '#10b981' });
+    if (noLpsVis.length) groups.push({ objectIds: noLpsVis, color: '#6b7280' });
+    if (groups.length) {
+      await S.filter.setUserObjectColors(groups);
       try { S.viewer.requestRender(); } catch(e) {}
     }
   } catch(e) { console.warn('applyFilters:', e.message); }
