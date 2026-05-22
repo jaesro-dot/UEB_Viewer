@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Control_AR · UEB003-CED</title>
+<title>Control AR · UEB003-CED</title>
 <script type="importmap">{"imports":{"@speckle/viewer":"https://esm.sh/@speckle/viewer@2.19.5"}}</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
@@ -98,12 +98,13 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 <body>
 <div id="app">
 <header>
-  <span class="logo">Control_AR</span>
+  <span class="logo">Control AR</span>
   <div class="sep"></div>
   <span id="stag">Selecciona un modelo</span>
   <div class="hr">
     <span id="color-status" style="font-family:var(--mono);font-size:10px;color:var(--mu);display:none"></span>
     <button onclick="resetView()" title="Vista inicial" style="font-size:18px;padding:5px 12px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--tx);cursor:pointer;line-height:1">⌂</button>
+    <button onclick="volverSelector()" title="Cambiar modelo" style="font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--mu);cursor:pointer">⟵ Modelos</button>
     <button class="btn" onclick="exportJSON()" title="Exportar registros para transferir entre dispositivos">💾 Exportar</button>
     <label class="btn" style="cursor:pointer" title="Importar registros desde otro dispositivo">📂 Importar<input type="file" accept=".json" onchange="importJSON(event)" style="display:none"></label>
     <button class="btn gn" onclick="exportCSV()">CSV → Dynamo</button>
@@ -119,7 +120,7 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
     </div>
     <!-- Selector de modelos - se oculta al cargar uno -->
     <div id="model-selector" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,16,.94);z-index:49">
-      <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">Control_AR · UEB003-CED</div>
+      <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">Control AR · UEB003-CED</div>
       <div id="sel-status" style="font-family:var(--mono);font-size:11px;color:var(--mu)">Iniciando visor...</div>
       <div class="mbx" id="mbox">
         <button class="mbt" disabled onclick="loadModel(MODELS[0])"><span class="mi">📐</span><span><span class="ml">EST — Estructural</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
@@ -209,12 +210,12 @@ import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
 
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
-  { label:'EST — Estructural',      url:'https://app.speckle.systems/projects/c9c081c5b1/models/c89a3e7e5c', sist:'EST' },
-  { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/6ba967132f', sist:'ARQ' },
+  { label:'EST — Estructural',      url:'https://app.speckle.systems/projects/c9c081c5b1/models/ba79c9b356', sist:'EST' },
+  { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/ab599871dd', sist:'ARQ' },
   { label:'SAN — Sanitarias',       url:'https://app.speckle.systems/projects/c9c081c5b1/models/6db9f15e0e', sist:'SAN' },
   { label:'IE  — Inst. Eléctricas', url:'https://app.speckle.systems/projects/c9c081c5b1/models/aa98c3b773', sist:'IE'  },
   { label:'ICT — Comunicaciones',   url:'https://app.speckle.systems/projects/c9c081c5b1/models/3bbdd652d0', sist:'ICT' },
-  { label:'MEC — Mecánicas',        url:'https://app.speckle.systems/projects/c9c081c5b1/models/f06dd7c628', sist:'MEC' },
+  { label:'MEC — Mecánicas',        url:'https://app.speckle.systems/projects/c9c081c5b1/models/e5d6539b35', sist:'MEC' },
   { label:'ACI — Aire / Clima',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/378f828fe0', sist:'ACI' },
 ];
 
@@ -881,6 +882,29 @@ window.importJSON = async function(event) {
 };
 
 /* RESET VIEW */
+window.volverSelector = async function() {
+  // Limpiar modelo actual y mostrar selector
+  if (S.viewer) {
+    try { await S.viewer.unloadAll(); } catch(e) {}
+    S.elements = []; S.selId = null; S.nodeMap = {};
+    if (S.filter) { try { await S.filter.resetFilters(); } catch(e) {} }
+  }
+  // Reset UI
+  document.getElementById('fn').value = '';
+  document.getElementById('fs').value = '';
+  document.getElementById('fn').innerHTML = '<option value="">Todos</option>';
+  document.getElementById('fs').innerHTML = '<option value="">Todos</option>';
+  document.getElementById('stag').textContent = 'Selecciona un modelo';
+  document.getElementById('el').innerHTML = '';
+  document.getElementById('nos').style.display = 'flex';
+  document.getElementById('ep').style.display  = 'none';
+  // Mostrar selector y re-habilitar botones
+  const sel = document.getElementById('model-selector');
+  if (sel) sel.style.display = 'flex';
+  document.querySelectorAll('#mbox .mbt').forEach(b => b.disabled = false);
+  updateUI();
+};
+
 window.resetView = function() {
   if (!S.viewer) return;
   try {
