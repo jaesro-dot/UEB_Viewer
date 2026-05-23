@@ -104,7 +104,9 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
   <div class="hr">
     <span id="color-status" style="font-family:var(--mono);font-size:10px;color:var(--mu);display:none"></span>
     <button onclick="resetView()" title="Vista inicial" style="font-size:18px;padding:5px 12px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--tx);cursor:pointer;line-height:1">⌂</button>
+    <button onclick="toggleSection()" id="btn-section" title="Activar/desactivar plano de corte" style="font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--mu);cursor:pointer">✂ Corte</button>
     <button onclick="volverSelector()" title="Cambiar modelo" style="font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--mu);cursor:pointer">⟵ Modelos</button>
+    <button onclick="limpiarCache()" title="Borrar caché y datos guardados" style="font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:4px;border:1px solid var(--bd);background:var(--c3);color:var(--mu);cursor:pointer">🗑 Caché</button>
     <button class="btn" onclick="exportJSON()" title="Exportar registros para transferir entre dispositivos">💾 Exportar</button>
     <label class="btn" style="cursor:pointer" title="Importar registros desde otro dispositivo">📂 Importar<input type="file" accept=".json" onchange="importJSON(event)" style="display:none"></label>
     <button class="btn gn" onclick="exportCSV()">CSV → Dynamo</button>
@@ -122,6 +124,9 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
     <div id="model-selector" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,12,16,.94);z-index:49">
       <div style="font-family:var(--mono);font-size:15px;font-weight:500;color:var(--tx)">Control AR · UEB003-CED</div>
       <div id="sel-status" style="font-family:var(--mono);font-size:11px;color:var(--mu)">Iniciando visor...</div>
+      <div id="mobile-warn" style="display:none;font-family:var(--mono);font-size:10px;color:var(--pe);text-align:center;max-width:280px;line-height:1.5">
+        ⚠ En móvil/tablet: carga un modelo a la vez.<br>Si se congela, usa 🗑 Caché y recarga.
+      </div>
       <div class="mbx" id="mbox">
         <button class="mbt" disabled onclick="loadModel(MODELS[0])"><span class="mi">📐</span><span><span class="ml">EST — Estructural</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
         <button class="mbt" disabled onclick="loadModel(MODELS[1])"><span class="mi">📐</span><span><span class="ml">ARQ — Arquitectura</span><span class="ms" style="display:block">Cargar modelo</span></span></button>
@@ -206,11 +211,11 @@ header{background:var(--c1);border-bottom:1px solid var(--bd);display:flex;align
 <script type="module">
 import { Viewer, DefaultViewerParams, SpeckleLoader, UrlHelper,
          CameraController, SelectionExtension, FilteringExtension,
-         ViewerEvent } from '@speckle/viewer';
+         SectionTool, SectionOutlines, ViewerEvent } from '@speckle/viewer';
 
 /* ★ MODELOS DEL PROYECTO — edita aquí para añadir/quitar disciplinas ★ */
 const MODELS = [
-  { label:'EST — Estructural',      url:'https://app.speckle.systems/projects/c9c081c5b1/models/ba79c9b356', sist:'EST' },
+  { label:'EST — Estructural',      url:'https://app.speckle.systems/projects/c9c081c5b1/models/d2f96f57f5', sist:'EST' },
   { label:'ARQ — Arquitectura',     url:'https://app.speckle.systems/projects/c9c081c5b1/models/ab599871dd', sist:'ARQ' },
   { label:'SAN — Sanitarias',       url:'https://app.speckle.systems/projects/c9c081c5b1/models/6db9f15e0e', sist:'SAN' },
   { label:'IE  — Inst. Eléctricas', url:'https://app.speckle.systems/projects/c9c081c5b1/models/aa98c3b773', sist:'IE'  },
@@ -220,18 +225,32 @@ const MODELS = [
 ];
 
 /* ESTADO */
-const S = { viewer:null, filter:null, sel:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, selHitIds:[], active:null, nodeMap:{} };
+const S = { viewer:null, filter:null, sel:null, section:null, elements:[], lps:{}, nota:{}, selId:null, selNodeId:null, selHitIds:[], active:null, nodeMap:{} };
 window.S = S; // exponer para debug
 // Exponer filter como propiedad que siempre lee el valor actual de S
 Object.defineProperty(window, '_filter', { get: () => S.filter });
 
 /* INIT VIEWER */
 async function initViewer() {
-  S.viewer = new Viewer(document.getElementById('sv'), { ...DefaultViewerParams, showStats:false, verbose:false });
+  // Detectar móvil/tablet para ajustar rendimiento
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const viewerParams = {
+    ...DefaultViewerParams,
+    showStats: false,
+    verbose:   false,
+    // En móvil reducir calidad para mejor rendimiento
+    ...(isMobile ? {
+      antialiasing: false,
+      shadows:      false,
+    } : {})
+  };
+  S.viewer = new Viewer(document.getElementById('sv'), viewerParams);
   await S.viewer.init();
   S.viewer.createExtension(CameraController);
-  S.filter = S.viewer.createExtension(FilteringExtension);
-  S.sel    = S.viewer.createExtension(SelectionExtension);
+  S.filter  = S.viewer.createExtension(FilteringExtension);
+  S.sel     = S.viewer.createExtension(SelectionExtension);
+  S.section = S.viewer.createExtension(SectionTool);
+  S.viewer.createExtension(SectionOutlines);
   // window.S ya apunta al mismo objeto S, así que S.filter es accesible como window.S.filter
 
   // Triple fallback para capturar el click en el viewer
@@ -297,6 +316,11 @@ async function initViewer() {
   console.log('FilteringExtension métodos:', _fMethods);
   const _vMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(S.viewer||{}));
   console.log('Viewer métodos:', _vMethods.filter(m => m.includes('hide')||m.includes('show')||m.includes('ghost')||m.includes('isolat')||m.includes('filter')||m.includes('object')||m.includes('Object')));
+  // Mostrar aviso en dispositivos móviles
+  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+    const mw = document.getElementById('mobile-warn');
+    if (mw) mw.style.display = 'block';
+  }
   window.dispatchEvent(new CustomEvent('viewer-ready'));
   const selStatus = document.getElementById('sel-status');
   if (selStatus) selStatus.textContent = 'Selecciona el modelo a visualizar';
@@ -400,11 +424,16 @@ async function extractElements(sist) {
     if (!st || st.includes('chunk') || st.includes('datastore') ||
         st.includes('view') || st === 'objects.base') return true;
 
-    // Geometría real O elemento con id de aplicación (instancia Revit)
-    const hasGeo = raw['@displayValue'] || raw.displayValue ||
-                   raw['@displayMesh']  || raw.displayMesh;
+    // Incluir si tiene geometría o applicationId (instancia Revit)
+    const hasGeo   = raw['@displayValue'] || raw.displayValue ||
+                     raw['@displayMesh']  || raw.displayMesh  ||
+                     raw['@brep']         || raw.brep;
     const hasAppId = raw.applicationId && raw.applicationId.length > 5;
-    if (!hasGeo && !hasAppId) return true;
+    const hasRevit = st.includes('revit') || st.includes('structural') ||
+                     st.includes('wall')  || st.includes('column') ||
+                     st.includes('beam')  || st.includes('floor') ||
+                     st.includes('slab');
+    if (!hasGeo && !hasAppId && !hasRevit) return true;
 
     // Excluir tipos que no son instancias
     if (st.includes('revittype') || st.includes('familytype') ||
@@ -882,6 +911,86 @@ window.importJSON = async function(event) {
 };
 
 /* RESET VIEW */
+/* LIMPIAR CACHÉ */
+window.limpiarCache = async function() {
+  const confirm = window.confirm(
+    '¿Qué deseas limpiar?
+
+' +
+    'OK → Solo caché del visor (mantiene registros LPS)
+' +
+    'Cancela → Nada'
+  );
+  if (!confirm) return;
+
+  const full = window.confirm(
+    '¿Borrar también los registros LPS guardados?
+
+' +
+    'OK → Borrar TODO (LPS + caché)
+' +
+    'Cancela → Solo caché del visor'
+  );
+
+  // Limpiar caché del navegador para este sitio
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+
+  if (full) {
+    localStorage.removeItem('lps_ueb003');
+    localStorage.removeItem('nota_ueb003');
+    S.lps  = {};
+    S.nota = {};
+    updateUI();
+  }
+
+  // Descargar modelo actual y recargar
+  if (S.viewer) {
+    try { await S.viewer.unloadAll(); } catch(e) {}
+    S.elements = []; S.nodeMap = {}; S.selId = null;
+  }
+
+  const msg = full
+    ? '✓ Caché y registros LPS borrados.
+Recarga la página para empezar limpio.'
+    : '✓ Caché del visor borrado.
+Vuelve a cargar el modelo.';
+  alert(msg);
+
+  if (full) setTimeout(() => location.reload(), 500);
+  else volverSelector();
+};
+
+/* SECCIÓN / CORTE */
+let _sectionActive = false;
+window.toggleSection = function() {
+  if (!S.section) return;
+  const btn = document.getElementById('btn-section');
+  try {
+    if (_sectionActive) {
+      S.section.enabled = false;
+      S.section.displayOff();
+      _sectionActive = false;
+      if (btn) { btn.style.background='var(--c3)'; btn.style.color='var(--mu)'; btn.textContent='✂ Corte'; }
+    } else {
+      S.section.enabled = true;
+      S.section.displayOn();
+      // Posicionar el plano de corte en el centro del modelo
+      S.section.setPlane({ normal: { x:0, y:0, z:1 }, constant: 0 }, false);
+      _sectionActive = true;
+      if (btn) { btn.style.background='rgba(59,130,246,.2)'; btn.style.color='var(--ac)'; btn.style.borderColor='var(--ac)'; btn.textContent='✂ Corte ON'; }
+    }
+  } catch(e) {
+    console.warn('SectionTool:', e.message);
+    // Fallback: intentar método alternativo
+    try {
+      S.viewer.toggleSection?.();
+    } catch(e2) {}
+  }
+};
+
 window.volverSelector = async function() {
   // Limpiar modelo actual y mostrar selector
   if (S.viewer) {
