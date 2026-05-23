@@ -1033,5 +1033,16 @@ window.resetView = function() {
 loadFromStorage();
 await initViewer();
 </script>
+
+<!-- Registrar Service Worker para caché offline -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/UEB_Viewer/sw.js')
+      .then(reg => console.log('SW registrado:', reg.scope))
+      .catch(err => console.warn('SW error:', err));
+  });
+}
+</script>
 </body>
 </html>
